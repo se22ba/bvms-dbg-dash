@@ -1,0 +1,41 @@
+:root{ --bg:#0b1220; --card:#121a2a; --fg:#e5eef9; --muted:#9fb1c9;
+ --ok:#00d084; --warn:#ffb020; --err:#ff5d5d; --accent:#3e82f7; }
+*{ box-sizing:border-box; }
+html,body{ margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #1c2740; }
+h1{ margin:0; font-weight:700; }
+header .right button{ margin-left:8px; }
+.card{ background:var(--card); margin:16px 20px; padding:16px; border-radius:12px; }
+.row{ display:flex; gap:12px; align-items:center; margin:8px 0; }
+.row.compact input{ width:180px; }
+label{ color:var(--muted); }
+textarea{ width:100%; background:#0e1626; color:var(--fg); border:1px solid #223054; border-radius:8px; padding:8px; }
+input{ background:#0e1626; color:var(--fg); border:1px solid #223054; border-radius:6px; padding:6px 8px; }
+button{ background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 12px; cursor:pointer; }
+button:hover{ filter:brightness(1.1); }
+#progress{ color:var(--muted); margin-top:8px; min-height:18px; }
+
+nav{ display:flex; gap:8px; padding:0 20px; }
+nav button{ background:#17213a; }
+nav button.active{ background:var(--accent); }
+
+main{ padding:12px 20px; }
+.tab{ display:none; }
+.tab.active{ display:block; }
+
+.kpis{ display:flex; gap:12px; flex-wrap:wrap; }
+.kpi{ background:var(--card); padding:12px; border-radius:12px; min-width:160px; }
+.kpi b{ display:block; font-size:22px; margin-top:6px; }
+
+.pill{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#24304e; color:#cfe0ff; }
+.pill.ok{ background:#0b3; color:#fff; }
+.pill.warn{ background:#b86e00; color:#fff; }
+.pill.error{ background:#b3102c; color:#fff; }
+.pill.neutral{ background:#2b395d; color:#cfe0ff; }
+
+.table-wrap{ overflow:auto; background:var(--card); border-radius:12px; padding:8px; }
+table{ width:100%; border-collapse:collapse; }
+th,td{ padding:8px 10px; border-bottom:1px solid #223054; white-space:nowrap; }
+th{ text-align:left; color:#adc2e5; position:sticky; top:0; background:var(--card); }
+tr:hover td{ background:#0e1626; }
+footer{ color:var(--muted); padding:16px 20px; }
