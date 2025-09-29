@@ -1,137 +1,182 @@
-const $ = (q) => document.querySelector(q);
-const $$ = (q) => Array.from(document.querySelectorAll(q));
-const fmt = (n) => Intl.NumberFormat('es-AR').format(n);
+(() => {
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
-const defaultVrms = [
-  { site:"BVMS1", name:"VRM1", host:"172.25.0.15" },
-  { site:"BVMS1", name:"VRM2", host:"172.25.0.18" },
-  { site:"BVMS2", name:"VRM1", host:"172.25.20.3" },
-  { site:"BVMS2", name:"VRM2", host:"172.25.20.4" },
-  { site:"BVMS2", name:"VRM3", host:"172.25.20.5" }
-];
+  // UI refs
+  const vrmTextarea = $("#vrm-list");
+  const userInput   = $("#dbg-user");
+  const passInput   = $("#dbg-pass");
+  const btnScan     = $("#btn-scan");
+  const progressBox = $("#progress");
+  const tsBox       = $("#ts");
+  const tabButtons  = $$(".tab-btn");
+  const tabPages    = $$(".tab-page");
 
-function setVrmsText(vrms) {
-  $("#vrmsInput").value = vrms.map(v => `${v.site} · ${v.name} · ${v.host}`).join("\n");
-}
-function parseVrmsText() {
-  const lines = $("#vrmsInput").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  return lines.map(l => {
-    const parts = l.split("·").map(s=>s.trim());
-    if (parts.length === 3) return { site:parts[0], name:parts[1], host:parts[2] };
-    const bits = l.split(/\s+/);
-    return { site: bits[0]||"SITE", name: bits[1]||"VRM", host: bits.pop() };
+  // Overview
+  const cardTotalCams   = $("#card-total-cams");
+  const cardRecCams     = $("#card-rec-cams");
+  const cardNoRecCams   = $("#card-norec-cams");
+  const cardNoBlocks    = $("#card-noblocks-cams");
+  const tblOverviewBody = $("#tbl-overview tbody");
+
+  // VRMs
+  const tblVrmsBody     = $("#tbl-vrms tbody");
+
+  // Cámaras
+  const tblCamsBody     = $("#tbl-cams tbody");
+  const filterName      = $("#filter-name");
+  const filterIp        = $("#filter-ip");
+  const btnExportCams   = $("#btn-exp-cams");
+  const btnExportVrms   = $("#btn-exp-vrms");
+
+  let snapshot = { cameras: [], vrmStats: [], vrms: [], progress: [], ts: 0 };
+
+  // Tabs
+  tabButtons.forEach(b => {
+    b.addEventListener("click", () => {
+      tabButtons.forEach(x => x.classList.remove("active"));
+      tabPages.forEach(p => p.classList.add("hidden"));
+      b.classList.add("active");
+      const target = b.getAttribute("data-target");
+      $(target).classList.remove("hidden");
+    });
   });
-}
 
-async function scanOnce() {
-  const vrms = parseVrmsText();
-  const user = $("#user").value;
-  const pass = $("#pass").value;
-
-  $("#progress").innerHTML = "Preparando…";
-  const res = await fetch("/api/scan", {
-    method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify({ vrms, user, pass })
-  });
-  const data = await res.json();
-
-  $("#progress").innerHTML = (data.progress||[]).map(p=>`• ${p}`).join("<br>");
-
-  if (!data || !data.cameras) {
-    $("#summary").innerHTML = `<div class="pill error">Sin datos</div>`;
-    return;
+  // Helpers
+  function parseVrmTextarea(txt) {
+    return txt.split(/\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .map(l => {
+        const parts = l.split(/\s*[•\-]\s*|\s{2,}/).filter(Boolean);
+        const ip = parts.pop();
+        const name = parts.pop() || "VRM";
+        const site = parts.join(" ") || "BVMS";
+        return { site, name, host: ip };
+      });
   }
 
-  renderOverview(data);
-  renderVrms(data);
-  renderCameras(data);
-}
+  function nice(s){ return (s==null ? "" : String(s)); }
 
-function pill(txt, cls="") { return `<span class="pill ${cls}">${txt}</span>`; }
+  function renderProgress(lines){
+    progressBox.value = lines.join("\n");
+    progressBox.scrollTop = progressBox.scrollHeight;
+  }
 
-function renderOverview(snap) {
-  const cams = snap.cameras;
-  const total = cams.length;
-  const recOn = cams.filter(c => c.recording.includes("on")).length;
-  const noRec = cams.filter(c => c.recording.includes("off") || c.recording.includes("no")).length;
-  const noBlocks = cams.filter(c => c.blockMounted.includes("no")).length;
+  function updateOverview(){
+    const cams = snapshot.cameras || [];
+    cardTotalCams.textContent = cams.length;
+    cardRecCams.textContent   = cams.filter(c => (c.recording||"").toLowerCase().startsWith("record")).length;
+    cardNoRecCams.textContent = cams.filter(c => !(c.recording||"").toLowerCase().startsWith("record")).length;
+    cardNoBlocks.textContent  = cams.filter(c => !c.raw || !c.raw["Current block"]).length;
 
-  $("#summary").innerHTML = `
-    <div class="kpi">${pill("Cámaras", "neutral")}<b>${fmt(total)}</b></div>
-    <div class="kpi">${pill("Grabando", "ok")}<b>${fmt(recOn)}</b></div>
-    <div class="kpi">${pill("Sin grabar", "warn")}<b>${fmt(noRec)}</b></div>
-    <div class="kpi">${pill("Sin bloques", "error")}<b>${fmt(noBlocks)}</b></div>
-  `;
+    tblOverviewBody.innerHTML = "";
+    cams.forEach(c => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${nice(c.vrmId)}</td>
+        <td>${nice(c.name)}</td>
+        <td>${nice(c.address)}</td>
+        <td>${nice(c.recording)}</td>
+        <td>${nice(c.raw?.["Current block"]||"")}</td>
+        <td>${nice(c.fw)}</td>
+        <td>${nice(c.connTime)}</td>
+      `;
+      tblOverviewBody.appendChild(tr);
+    });
+  }
 
-  // Lista de issues rápidos
-  const issues = cams.filter(c =>
-    c.recording.includes("off") || c.recording.includes("no") || c.blockMounted.includes("no")
-  );
-  $("#issues").innerHTML = renderTable(
-    ["VRM","Nombre","IP/Canal","Recording","Bloques","FW","Conexión"],
-    issues.map(c => [
-      c.vrmId, c.name||"", c.address,
-      c.recording||"", c.blockMounted||"",
-      c.fw||"", c.connTime||""
-    ])
-  );
-}
+  function updateVrms(){
+    const rows = snapshot.vrmStats || [];
+    tblVrmsBody.innerHTML = "";
+    rows.forEach(v => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${nice(v.vrmId)}</td>
+        <td class="num">${v.targets ?? ""}</td>
+        <td class="num">${v.cameras ?? ""}</td>
+        <td class="num">${v.totalGiB ?? ""}</td>
+        <td class="num">${v.availableGiB ?? ""}</td>
+        <td class="num">${v.emptyGiB ?? ""}</td>
+        <td class="num">${v.protectedGiB ?? ""}</td>
+      `;
+      tblVrmsBody.appendChild(tr);
+    });
+  }
 
-function renderVrms(snap) {
-  const rows = (snap.vrmStats||[]).map(v => [
-    v.vrmId, fmt(v.totalGiB), fmt(v.availableGiB), fmt(v.emptyGiB),
-    fmt(v.protectedGiB), v.targets, v.cameras
-  ]);
-  $("#vrmTable").innerHTML = renderTable(
-    ["VRM","Total GiB","Disponibles","Vacíos","Protegidos","Targets","Cámaras"], rows
-  );
-}
+  function updateCamerasTable(){
+    const nameQ = (filterName.value||"").toLowerCase();
+    const ipQ   = (filterIp.value||"").toLowerCase();
+    const cams = (snapshot.cameras||[]).filter(c => {
+      const name = (c.name||"").toLowerCase();
+      const ip   = (c.address||"").toLowerCase();
+      return (!nameQ || name.includes(nameQ)) && (!ipQ || ip.includes(ipQ));
+    });
 
-function renderCameras(snap) {
-  const cams = snap.cameras;
-  const termInput = $("#camSearch");
-  const draw = () => {
-    const term = termInput.value.toLowerCase();
-    const filtered = cams.filter(c =>
-      (c.name||"").toLowerCase().includes(term) ||
-      (c.address||"").toLowerCase().includes(term) ||
-      (c.vrmId||"").toLowerCase().includes(term)
-    );
-    $("#camTable").innerHTML = renderTable(
-      ["VRM","Nombre","IP/Canal","Recording","Bloques","FW","Conexión","Target","Bitrate máx"],
-      filtered.map(c => [
-        c.vrmId, c.name||"", c.address||"",
-        c.recording||"", c.blockMounted||"",
-        c.fw||"", c.connTime||"", c.primaryTarget||"", c.maxBitrate??""
-      ])
-    );
-  };
-  termInput.oninput = draw;
-  draw();
-}
+    tblCamsBody.innerHTML = "";
+    cams.forEach(c => {
+      const block = c.raw?.["Current block"] || "";
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${nice(c.vrmId)}</td>
+        <td>${nice(c.name)}</td>
+        <td>${nice(c.address)}</td>
+        <td>${nice(c.recording)}</td>
+        <td>${nice(block)}</td>
+        <td>${nice(c.fw)}</td>
+        <td>${nice(c.connTime)}</td>
+        <td>${nice(c.primaryTarget || c.raw?.["Primary target"] || "")}</td>
+        <td class="num">${c.maxBitrate ?? ""}</td>
+      `;
+      tblCamsBody.appendChild(tr);
+    });
+  }
 
-function renderTable(headers, rows) {
-  const thead = `<thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead>`;
-  const tbody = `<tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c??""}</td>`).join("")}</tr>`).join("")}</tbody>`;
-  return `<table>${thead}${tbody}</table>`;
-}
+  function renderAll(){
+    tsBox.textContent = snapshot.ts ? new Date(snapshot.ts).toLocaleString() : "—";
+    renderProgress(snapshot.progress || []);
+    updateOverview();
+    updateVrms();
+    updateCamerasTable();
+  }
 
-/* tabs */
-$$("nav button").forEach(btn => {
-  btn.onclick = () => {
-    $$("nav button").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-    const id = btn.dataset.tab;
-    $$(".tab").forEach(t => t.classList.remove("active"));
-    $(`#tab-${id}`).classList.add("active");
-  };
-});
+  // Eventos
+  btnScan.addEventListener("click", async () => {
+    progressBox.value = "";
+    tsBox.textContent = "consultando…";
+    const vrms = parseVrmTextarea(vrmTextarea.value);
+    if (!vrms.length){
+      alert("Cargá al menos un VRM (site • nombre • IP)");
+      return;
+    }
+    const payload = {
+      vrms,
+      user: userInput.value || "srvadmin",
+      pass: passInput.value || ""
+    };
 
-/* exports */
-$("#exportVrms").onclick = () => window.open("/api/export/vrms.csv","_blank");
-$("#exportCams").onclick = () => window.open("/api/export/cameras.csv","_blank");
+    try{
+      const r = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await r.json();
+      snapshot = {
+        cameras: data.cameras || [],
+        vrmStats: data.vrmStats || [],
+        vrms: data.vrms || [],
+        progress: data.progress || [],
+        ts: data.ts || Date.now()
+      };
+      renderAll();
+    }catch(e){
+      progressBox.value += `\n❌ ${e.message}`;
+    }
+  });
 
-/* go */
-setVrmsText(defaultVrms);
-$("#scanBtn").onclick = scanOnce;
+  filterName.addEventListener("input", updateCamerasTable);
+  filterIp.addEventListener("input", updateCamerasTable);
+  btnExportCams.addEventListener("click", () => window.open("/api/export/cameras.csv", "_blank"));
+  btnExportVrms.addEventListener("click", () => window.open("/api/export/vrms.csv", "_blank"));
+})();

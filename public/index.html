@@ -1,57 +1,81 @@
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8"/>
-  <title>BVMS • DBG Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="styles.css"/>
+  <meta charset="UTF-8">
+  <title>BVMS DBG Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header>
-    <h1>BVMS · RCP/DBG Dashboard</h1>
-    <div class="right">
-      <button id="exportVrms">Export VRMs</button>
-      <button id="exportCams">Export Cámaras</button>
-    </div>
+    <h1>BVMS • DBG Dashboard</h1>
+    <small>Último scan: <span id="ts">—</span></small>
   </header>
 
-  <section class="card">
-    <div class="row">
-      <label>VRMs (site · nombre · IP):</label>
-      <textarea id="vrmsInput" rows="4" spellcheck="false"></textarea>
+  <section class="controls">
+    <textarea id="vrm-list" rows="3" placeholder="BVMS1 • VRM1 • 172.25.0.15
+BVMS1 • VRM2 • 172.25.0.18"></textarea>
+    <div>
+      <input id="dbg-user" placeholder="Usuario /dbg (srvadmin)">
+      <input id="dbg-pass" type="password" placeholder="Password">
+      <button id="btn-scan">Consultar</button>
     </div>
-    <div class="row compact">
-      <label>Usuario /dbg:</label><input id="user" value="srvadmin"/>
-      <label>Pass:</label><input id="pass" type="password" value="DFDgsfe01!"/>
-      <button id="scanBtn">Consultar</button>
-    </div>
-    <div id="progress"></div>
   </section>
 
-  <nav>
-    <button data-tab="overview" class="active">Overview</button>
-    <button data-tab="vrms">VRMs</button>
-    <button data-tab="cameras">Cámaras</button>
+  <nav class="tabs">
+    <button class="tab-btn active" data-target="#page-overview">Overview</button>
+    <button class="tab-btn" data-target="#page-vrms">VRMs</button>
+    <button class="tab-btn" data-target="#page-cams">Cámaras</button>
   </nav>
 
-  <main>
-    <section id="tab-overview" class="tab active">
-      <div id="summary" class="kpis"></div>
-      <div id="issues" class="table-wrap"></div>
-    </section>
+  <textarea id="progress" rows="6" readonly></textarea>
 
-    <section id="tab-vrms" class="tab">
-      <div id="vrmTable" class="table-wrap"></div>
-    </section>
+  <!-- Overview -->
+  <section id="page-overview" class="tab-page">
+    <div class="cards">
+      <div class="card">Cámaras <span id="card-total-cams">0</span></div>
+      <div class="card success">Grabando <span id="card-rec-cams">0</span></div>
+      <div class="card warn">Sin grabar <span id="card-norec-cams">0</span></div>
+      <div class="card error">Sin bloques <span id="card-noblocks-cams">0</span></div>
+    </div>
+    <table id="tbl-overview">
+      <thead><tr>
+        <th>VRM</th><th>Nombre</th><th>IP/Canal</th>
+        <th>Recording</th><th>Bloque actual</th><th>FW</th><th>Conexión</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
 
-    <section id="tab-cameras" class="tab">
-      <div class="row">
-        <input id="camSearch" placeholder="Buscar nombre/IP…">
-      </div>
-      <div id="camTable" class="table-wrap"></div>
-    </section>
-  </main>
+  <!-- VRMs -->
+  <section id="page-vrms" class="tab-page hidden">
+    <button id="btn-exp-vrms">Exportar VRMs CSV</button>
+    <table id="tbl-vrms">
+      <thead><tr>
+        <th>VRM</th><th>Targets</th><th>Cámaras</th>
+        <th>Total GiB</th><th>Disponible GiB</th>
+        <th>Vacío GiB</th><th>Protegido GiB</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
 
-  <footer>RCP* directo a cámaras; /dbg para inventario VRM. Build rápido, sin humo ✨</footer>
+  <!-- Cámaras -->
+  <section id="page-cams" class="tab-page hidden">
+    <div class="filters">
+      <input id="filter-name" placeholder="Filtrar por nombre">
+      <input id="filter-ip" placeholder="Filtrar por IP/canal">
+      <button id="btn-exp-cams">Exportar Cámaras CSV</button>
+    </div>
+    <table id="tbl-cams">
+      <thead><tr>
+        <th>VRM</th><th>Nombre</th><th>IP/Canal</th><th>Recording</th>
+        <th>Bloque</th><th>FW</th><th>Conexión</th>
+        <th>Target</th><th>Bitrate máx</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Debug</title>
+<link rel='stylesheet' href='dbg/style.css'>
+<link rel='icon' href='dbg/favicon.png'>
+</head>
+<body>
+<div class='offline-notification'>Offline</div>
+<p><a href='dbg'>Debug Main Page</a></p><p>Updated at: Mon Sep 29 20:07:34 2025
+</p>
+<table>
+<tr><th>Camera name</th><th>Address</th><th>Encryption</th><th>Recording state</th><th>Video connection time</th><th>Track ID</th><th>RTSP line</th><th>Recording type</th><th>Recording mode</th><th>Primary target</th><th>Secondary target</th><th>Current block</th><th>Max bitrate</th><th>Recorded blocks</th><th>timePerBlock</th><th>Last timePerBlock calculation</th><th>Recording block counter</th></tr>
+<tr><td>CAM1 VRM 94_ReName</td><td><a href='spaninfo.htm?id=6'>172.20.65.85\0\1</a></td><td>Off</td><td>Recording</td><td>2288579</td><td>6</td><td>1</td><td>Continuous</td><td>failover</td><td>172.20.67.140\0</td><td>0.0.0.0\0</td><td><span class='ok'>172.20.67.140\0\7\1018</span></td><td>10651</td><td>47</td><td>31 min 03 s</td><td>2025-09-29 18:58:17</td><td>569</td></tr>
+<tr><td>CAM2 VRM 94</td><td><a href='spaninfo.htm?id=7'>172.20.65.89\0\1</a></td><td>Off</td><td>Recording</td><td>2288579</td><td>7</td><td>2</td><td>Continuous</td><td>failover</td><td>172.20.67.140\0</td><td>0.0.0.0\0</td><td><span class='ok'>172.20.67.140\0\3\996</span></td><td>10345</td><td>53</td><td>28 min 30 s</td><td>2025-09-29 19:25:21</td><td>619</td></tr>
+<tr><td>1er_Piso_Pasillo</td><td><a href='spaninfo.htm?id=1'>172.20.67.94\1\1</a></td><td>Off</td><td>Recording</td><td>1411647</td><td>1</td><td>3</td><td>Continuous</td><td>failover</td><td>172.20.67.140\0</td><td>0.0.0.0\0</td><td><span class='ok'>172.20.67.140\0\7\1014</span></td><td>2391</td><td>21</td><td>01 h 18 min</td><td>2025-09-29 19:48:14</td><td>232</td></tr>
+<tr><td>AUTODOME_7100i_Escritorio</td><td><a href='spaninfo.htm?id=11'>172.20.67.94\1\2</a></td><td>Off</td><td>Recording</td><td>218648</td><td>11</td><td>4</td><td>Continuous</td><td>failover</td><td>172.20.67.140\0</td><td>0.0.0.0\0</td><td><span class='ok'>172.20.67.140\0\2\1008</span></td><td>4271</td><td>46</td><td>34 min 38 s</td><td>2025-09-29 19:48:14</td><td>549</td></tr>
+<tr><td>Ingreso_Comedor</td><td><a href='spaninfo.htm?id=2'>172.20.67.94\1\3</a></td><td>Off</td><td>Recording</td><td>1463284</td><td>2</td><td>5</td><td>Continuous</td><td>failover</td><td>172.20.67.140\0</td><td>0.0.0.0\0</td><td><span class='ok'>172.20.67.140\0\5\931</span></td><td>559</td><td>5</td><td>06 h 00 min</td><td>2025-09-29 19:48:14</td><td>44</td></tr>
+<tr><td>ONVIF - Driver BOSCH</td><td><a href='spaninfo.htm?id=3'>172.20.67.94\1\5</a></td><td>Off</td><td>Recording</td><td>1996215</td><td>3</td><td>6</td><td>Continuous</td><td>failover</td><td>172.20.67.140\0</td><td>0.0.0.0\0</td><td><span class='ok'>172.20.67.140\0\5\933</span></td><td>504</td><td>5</td><td>06 h 00 min</td><td>2025-09-29 19:48:14</td><td>37</td></tr>
+<tr><td>Don Pedro de Mendoza 443</td><td><a href='spaninfo.htm?id=8'>172.20.70.92\0\1</a></td><td>Off</td><td>Recording</td><td>2288579</td><td>8</td><td>7</td><td>Continuous</td><td>failover</td><td>172.20.67.140\0</td><td>0.0.0.0\0</td><td><span class='ok'>172.20.67.140\0\2\1009</span></td><td>10074</td><td>24</td><td>01 h 04 min</td><td>2025-09-29 18:41:25</td><td>323</td></tr></table>
+<p>Total bitrate: 
+38795
+ KBit/s</p>
+<p>[Note] Following colors are not used in all mode</p>
+<ul><li class='ok'>The device is recording on its primary target.</li>
+<li class='warning'>The device is recording on its secondary target and is not in failover mode.</li>
+<li class='error'>The device is neither recording on its primary nor secondary target or it is in failover mode and recording on its secondary target.</li></ul>
+<script src='dbg/reload.js'></script>
+<script src='dbg/rcpplogfilter.js'></script>
+</body>
+</html>
