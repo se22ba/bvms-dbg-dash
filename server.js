@@ -16,6 +16,9 @@ app.use(express.json());
 app.use(express.static("public"));
 
 const PORT = process.env.PORT || 3000;
+
+// Si tenés VRMs por defecto en .env:
+// VRMS=[{"site":"BVMS1","name":"VRM1","host":"172.20.67.94"}]
 const DEFAULT_VRMS = (() => {
   try { return JSON.parse(process.env.VRMS || "[]"); } catch { return []; }
 })();
@@ -27,7 +30,7 @@ const httpsAgent = new HttpsAgent({ rejectUnauthorized: false });
 
 let lastSnapshot = { ts: 0, vrms: [], cameras: [], vrmStats: [], progress: [] };
 
-/* --------------------------- FS helpers --------------------------- */
+/* ---------- FS helpers ---------- */
 const RAW_DIR = path.resolve(process.cwd(), "data", "raw");
 fs.mkdirSync(RAW_DIR, { recursive: true });
 function saveHtml(host, name, html) {
@@ -36,26 +39,27 @@ function saveHtml(host, name, html) {
   fs.writeFileSync(path.join(dir, name), html, "utf8");
 }
 
-/* ------------------------- HTTP utilities ------------------------- */
-function authHeader(u,p){ return { Authorization: "Basic " + Buffer.from(`${u}:${p}`).toString("base64") }; }
+/* ---------- HTTP utils ---------- */
+function authHeader(u, p) {
+  return { Authorization: "Basic " + Buffer.from(`${u}:${p}`).toString("base64") };
+}
 
-async function fetchWithTimeout(url, { timeoutMs = 15000, https = true, headers = {} } = {}) {
+async function fetchWithTimeout(url, { https = true, headers = {}, timeoutMs = 15000 } = {}) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
-      method: "GET",
+    const r = await fetch(url, {
       headers,
       agent: https ? httpsAgent : undefined,
       signal: controller.signal,
     });
-    const text = await res.text();
+    const text = await r.text();
     return {
-      ok: res.ok,
-      status: res.status,
-      statusText: res.statusText,
-      headers: res.headers,
-      text
+      ok: r.ok,
+      status: r.status,
+      statusText: r.statusText,
+      headers: r.headers,
+      text,
     };
   } finally {
     clearTimeout(t);
@@ -63,13 +67,13 @@ async function fetchWithTimeout(url, { timeoutMs = 15000, https = true, headers 
 }
 
 /**
- * Intenta descargar la primera ruta candidata que exista.
- * - Prueba HTTPS y luego HTTP
- * - Guarda HTML en data/raw/<host>/<logicalName>.html
+ * Intenta descargar la primera ruta que exista.
+ * - Prueba HTTPS y si no, HTTP.
+ * - Usa un set de candidatos (case variants).
+ * - Guarda el HTML en data/raw/<host>/<logicalName>.html si ok.
  */
 async function downloadFirst(host, logicalName, candidates, user, pass, progress) {
-  const ping = (m)=>{ progress.push(m); console.log(m); };
-
+  const ping = (m) => { progress.push(m); console.log(m); };
   for (const scheme of ["https", "http"]) {
     for (const rel of candidates) {
       const url = `${scheme}://${host}${rel}`;
@@ -78,15 +82,14 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
           https: scheme === "https",
           headers: {
             ...authHeader(user, pass),
-            Accept: "text/html,*/*;q=0.9",
-            Referer: `${scheme}://${host}/dbg`
-          }
+            Accept: "*/*",
+            Referer: `${scheme}://${host}/dbg`,
+          },
         });
-        const ctype = r.headers?.get?.("content-type") || "";
-        if (r.ok && /text\/html/i.test(ctype)) {
+        if (r.ok && r.status === 200) {
           saveHtml(host, `${logicalName}.html`, r.text);
           ping(`✓ ${host} ${logicalName} ← ${rel} (${scheme.toUpperCase()})`);
-          return { ok:true, scheme, rel, html:r.text };
+          return { ok: true, scheme, rel, html: r.text };
         } else {
           ping(`· ${host} ${logicalName} ${r.status} ${r.statusText} ← ${rel} (${scheme})`);
         }
@@ -95,36 +98,12 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
       }
     }
   }
-  return { ok:false, error:`no encontrado (${logicalName})` };
+  return { ok: false, error: `no encontrado (${logicalName})` };
 }
 
-/* ---------------------------- Parsers ----------------------------- */
-function normHeader(s='') {
-  return s.toLowerCase()
-    .replace(/\s+/g,' ')
-    .replace(/[._\-:/()[\]]/g,'')
-    .trim();
-}
-function tdText($, td) {
-  const $td = $(td);
-  const imgAlt = $td.find('img[alt]').attr('alt') || $td.find('img[title]').attr('title');
-  const title = $td.attr('title');
-  const text = $td.text().trim();
-  return (imgAlt || title || text || '').trim();
-}
-function asBool(v='') {
-  const s = String(v).toLowerCase();
-  return /(on|yes|ok|activo|grabando|mounted|mounted yes|check)/.test(s);
-}
-function pickNumber(s='') {
-  const m = String(s).replace(/,/g,'.').match(/[-+]?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
-}
-function ipOf(addr='') {
-  const m = String(addr).match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/);
-  return m ? m[0] : '';
-}
+/* ---------- PARSERS ---------- */
 
+// showTargets.htm
 function parseTargets(html, vrmId) {
   const $ = cheerio.load(html);
   const out = { vrmId, targets: [], totals: {}, connections: [] };
@@ -136,14 +115,14 @@ function parseTargets(html, vrmId) {
         vrmId,
         target: td.eq(0).text().trim(),
         connTime: td.eq(1).text().trim(),
-        bitrate: pickNumber(td.eq(5).text()),
-        totalGiB: pickNumber(td.eq(6).text()),
-        availableGiB: pickNumber(td.eq(7).text()),
-        emptyGiB: pickNumber(td.eq(8).text()),
-        protectedGiB: pickNumber(td.eq(9).text()),
-        slices: pickNumber(td.eq(10).text()),
-        outOfRes: pickNumber(td.eq(11).text()),
-        lastOutOfRes: td.eq(12).text().trim()
+        bitrate: Number(td.eq(5).text().trim() || 0),
+        totalGiB: Number(td.eq(6).text().trim() || 0),
+        availableGiB: Number(td.eq(7).text().trim() || 0),
+        emptyGiB: Number(td.eq(8).text().trim() || 0),
+        protectedGiB: Number(td.eq(9).text().trim() || 0),
+        slices: Number(td.eq(10).text().trim() || 0),
+        outOfRes: Number(td.eq(11).text().trim() || 0),
+        lastOutOfRes: td.eq(12).text().trim(),
       });
     }
   });
@@ -160,142 +139,126 @@ function parseTargets(html, vrmId) {
   });
   $("h1:contains('Connections')").next("table").find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
-    out.connections.push({ vrmId, target: td.eq(0).text().trim(), connections: pickNumber(td.eq(1).text()) || 0 });
+    out.connections.push({ vrmId, target: td.eq(0).text().trim(), connections: Number(td.eq(1).text().trim() || 0) });
   });
+
   return out;
 }
 
+// showDevices.htm
 function parseDevices(html, vrmId) {
   const $ = cheerio.load(html);
-  const $tbl = $("table").first();
-  if (!$tbl.length) return [];
-
-  const headers = $tbl.find("tr").first().find("th,td").map((i,th)=>normHeader($(th).text())).get();
-  const idx = (alts) => {
-    const list = Array.isArray(alts) ? alts : [alts];
-    for (const a of list) {
-      const i = headers.findIndex(h => h.includes(a));
-      if (i >= 0) return i;
+  const rows = [];
+  $("table").first().find("tr").slice(1).each((_, tr) => {
+    const td = $(tr).find("td");
+    if (td.length >= 18) {
+      rows.push({
+        vrmId,
+        device: td.eq(0).text().trim(),             // 172.20.65.85\0
+        guid: td.eq(1).text().trim(),
+        mac: td.eq(2).text().trim(),
+        fw: td.eq(3).text().trim(),                 // 09.41.0019
+        url: td.eq(6).text().trim(),
+        connTime: td.eq(7).text().trim(),
+        allocatedBlocks: Number(td.eq(8).text().trim() || 0),
+        limitedSpansSince: td.eq(9).text().trim(),
+        lbMode: td.eq(10).text().trim(),
+        primaryTarget: td.eq(11).text().trim(),
+        maxBitrate: Number(td.eq(17).text().trim() || 0), // “Max bitrate”
+      });
     }
-    return -1;
-  };
+  });
+  return rows;
+}
 
-  const iDev   = idx(['device','cameraaddress','address','ip']);
-  const iGuid  = idx(['guid']);
-  const iMac   = idx(['mac']);
-  const iFw    = idx(['firmware','fw','firmwareversion','version']);
-  const iUrl   = idx(['url','address','ip']);
-  const iConn  = idx(['connectiontime','connection','coneccion','uptime']);
-  const iBlocks= idx(['allocatedblocks','blocks','bloques']);
-  const iLb    = idx(['lbmode']);
-  const iTarget= idx(['primarytarget','target']);
-  const iMaxBr = idx(['maxbitrate','bitratemax']);
+// showCameras.htm  (robusto a nombres / idioma)
+function parseCameras(html, vrmId) {
+  const $ = cheerio.load(html);
+
+  const norm = s => String(s || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 
   const rows = [];
+  const $tbl = $("table").first();
+  const headers = $tbl.find("tr").first().find("th").map((i, th) =>
+    norm($(th).text())
+  ).get();
+
+  const idxBy = (label) => headers.findIndex(h => h === norm(label));
+
+  const iName          = idxBy("camera name");
+  const iAddr          = idxBy("address");
+  const iRec           = idxBy("recording");
+  const iCurBlock      = idxBy("current block");
+  const iPrimaryTarget = idxBy("primary target");
+  const iMaxBitrate    = idxBy("max bitrate");
+
   $tbl.find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
     if (!td.length) return;
 
-    rows.push({
-      vrmId,
-      device: iDev >= 0 ? tdText($, td[iDev]) : '',
-      guid: iGuid >= 0 ? tdText($, td[iGuid]) : '',
-      mac: iMac >= 0 ? tdText($, td[iMac]) : '',
-      fw: iFw >= 0 ? tdText($, td[iFw]) : '',
-      url: iUrl >= 0 ? tdText($, td[iUrl]) : '',
-      connTime: iConn >= 0 ? tdText($, td[iConn]) : '',
-      allocatedBlocks: iBlocks >= 0 ? pickNumber(tdText($, td[iBlocks])) : null,
-      lbMode: iLb >= 0 ? tdText($, td[iLb]) : '',
-      primaryTarget: iTarget >= 0 ? tdText($, td[iTarget]) : '',
-      maxBitrate: iMaxBr >= 0 ? pickNumber(tdText($, td[iMaxBr])) : null
-    });
-  });
+    const get = (i) => (i >= 0 ? td.eq(i).text().trim() : "");
 
-  return rows;
-}
+    const name           = get(iName);
+    const address        = get(iAddr);
+    const recording      = get(iRec);
+    const currentBlock   = get(iCurBlock);
+    const primaryTarget  = get(iPrimaryTarget);
+    const maxBitrateCam  = Number(get(iMaxBitrate).replace(",", ".")) || null;
 
-function parseCameras(html, vrmId) {
-  const $ = cheerio.load(html);
-  const $tbl = $("table").first();
-  if (!$tbl.length) return [];
-
-  const headers = $tbl.find("tr").first().find("th,td").map((i,th)=>normHeader($(th).text())).get();
-  const idx = (nameAlts) => {
-    const alts = Array.isArray(nameAlts) ? nameAlts : [nameAlts];
-    for (const a of alts) {
-      const i = headers.findIndex(h => h.includes(a));
-      if (i >= 0) return i;
-    }
-    return -1;
-  };
-
-  const iName   = idx(['cameraname','name','nombre']);
-  const iAddr   = idx(['cameraaddress','address','ip']);
-  const iRec    = idx(['recording','recordingstatus','estado']);
-  const iBlock  = idx(['blockmounted','block','bloques','mounted']);
-
-  const rows = [];
-  $tbl.find("tr").slice(1).each((_, tr) => {
-    const tds = $(tr).find("td");
-    if (!tds.length) return;
-
-    const name = iName >= 0 ? tdText($, tds[iName]) : '';
-    const address = iAddr >= 0 ? tdText($, tds[iAddr]) : '';
-    const recRaw = iRec >= 0 ? tdText($, tds[iRec]) : '';
-    const blkRaw = iBlock >= 0 ? tdText($, tds[iBlock]) : '';
+    const raw = {};
+    headers.forEach((h, i) => raw[h] = td.eq(i).text().trim());
 
     rows.push({
       vrmId,
       name,
       address,
-      recording: asBool(recRaw) ? 'on' : (String(recRaw)||'').toLowerCase(),
-      blockMounted: asBool(blkRaw) ? 'mounted' : (String(blkRaw)||'').toLowerCase(),
-      raw: { recRaw, blkRaw }
+      recording,
+      currentBlock,
+      primaryTarget,
+      maxBitrateCam,
+      raw,
     });
   });
-
   return rows;
 }
 
 function joinCamerasDevices(camRows, devRows) {
-  const byIp = new Map();
-  const byDev = new Map();
-
-  devRows.forEach(d => {
-    const ip = ipOf(d.device) || ipOf(d.url);
-    if (ip) byIp.set(ip, d);
-    if (d.device) byDev.set(d.device.replace(/\/+$/,''), d);
-  });
+  const devByDevice = new Map();
+  devRows.forEach(d => devByDevice.set((d.device || "").replace(/\/+$/, ""), d));
 
   return camRows.map(c => {
-    const ip = ipOf(c.address);
-    let dev = null;
-    if (ip && byIp.has(ip)) dev = byIp.get(ip);
-    if (!dev) {
-      const key = (c.address || '').replace(/\/+$/,'');
-      dev = byDev.get(key) || null;
-    }
+    const key = (c.address || "").replace(/\/+$/, "");
+    const dev = devByDevice.get(key);
+
+    const maxBitrate = c.maxBitrateCam != null
+      ? c.maxBitrateCam
+      : (dev?.maxBitrate ?? null);
+
     return {
       ...c,
-      device: dev?.device || c.address,
-      fw: dev?.fw || '',
-      connTime: dev?.connTime || '',
+      device: key,
+      fw: dev?.fw || "",
+      connTime: dev?.connTime || "",
       allocatedBlocks: dev?.allocatedBlocks ?? null,
-      primaryTarget: dev?.primaryTarget || '',
-      maxBitrate: dev?.maxBitrate ?? null
+      primaryTarget: c.primaryTarget || dev?.primaryTarget || "",
+      maxBitrate,
     };
   });
 }
 
-/* ----------------------------- API ------------------------------- */
-app.get("/api/status", (_req, res) => res.json({ ok:true, lastSnapshot: lastSnapshot.ts }));
+/* ---------- API ---------- */
+
+app.get("/api/status", (_req, res) => res.json({ ok: true, lastSnapshot: lastSnapshot.ts }));
 
 app.post("/api/scan", async (req, res) => {
   const { vrms = DEFAULT_VRMS, user = DBG_USER, pass = DBG_PASS } = req.body || {};
-  if (!Array.isArray(vrms) || !vrms.length) return res.status(400).json({ error:"No VRMs" });
+  if (!Array.isArray(vrms) || !vrms.length) return res.status(400).json({ error: "No VRMs" });
 
   const progress = [];
-  const ping = (m)=>{ progress.push(m); console.log(m); };
+  const ping = (m) => { progress.push(m); console.log(m); };
 
   const CANDS = {
     cameras: [
@@ -309,15 +272,15 @@ app.post("/api/scan", async (req, res) => {
     targets: [
       "/dbg/showTargets.htm", "/dbg/showtargets.htm", "/dbg/ShowTargets.htm",
       "/showTargets.htm", "/ShowTargets.htm"
-    ]
+    ],
   };
 
   try {
     const results = [];
-    for (let i=0;i<vrms.length;i++){
+    for (let i = 0; i < vrms.length; i++) {
       const v = vrms[i];
       const vrmId = `${v.site} • ${v.name} (${v.host})`;
-      ping(`Conectando ${vrmId} (${i+1}/${vrms.length})`);
+      ping(`Conectando ${vrmId} (${i + 1}/${vrms.length})`);
 
       const camRes = await downloadFirst(v.host, "showCameras", CANDS.cameras, user, pass, progress);
       const devRes = await downloadFirst(v.host, "showDevices", CANDS.devices, user, pass, progress);
@@ -329,13 +292,14 @@ app.post("/api/scan", async (req, res) => {
       if (!camRes.ok) errs.push(`cameras: ${camRes.error || "no 200"}`);
       if (errs.length) ping(`⚠ ${vrmId} -> ${errs.join(" | ")}`);
 
-      let targets=null, devices=[], cameras=[];
-      if (tgtRes.ok) try { targets = parseTargets(tgtRes.html, vrmId); } catch(e){ errs.push("parseTargets:"+e.message); }
-      if (devRes.ok) try { devices = parseDevices(devRes.html, vrmId); } catch(e){ errs.push("parseDevices:"+e.message); }
-      if (camRes.ok) try { cameras = parseCameras(camRes.html, vrmId); } catch(e){ errs.push("parseCameras:"+e.message); }
+      let targets = null, devices = [], cameras = [];
+      if (tgtRes.ok) try { targets = parseTargets(tgtRes.html, vrmId); } catch (e) { errs.push("parseTargets:" + e.message); }
+      if (devRes.ok) try { devices = parseDevices(devRes.html, vrmId); } catch (e) { errs.push("parseDevices:" + e.message); }
+      if (camRes.ok) try { cameras = parseCameras(camRes.html, vrmId); } catch (e) { errs.push("parseCameras:" + e.message); }
 
       const camsEnriched = joinCamerasDevices(cameras, devices);
-      results.push({ vrm:v, vrmId, errors:errs, targets, devicesCount: devices.length, cameras: camsEnriched });
+
+      results.push({ vrm: v, vrmId, errors: errs, targets, devicesCount: devices.length, cameras: camsEnriched });
       ping(`OK ${vrmId} — cams:${camsEnriched.length} devs:${devices.length}`);
     }
 
@@ -349,7 +313,7 @@ app.post("/api/scan", async (req, res) => {
         emptyGiB: Number(t["Empty blocks [GiB]"] || 0),
         protectedGiB: Number(t["Protected blocks [GiB]"] || 0),
         targets: (r.targets?.targets || []).length,
-        cameras: (r.cameras || []).length
+        cameras: (r.cameras || []).length,
       };
     });
 
@@ -361,24 +325,23 @@ app.post("/api/scan", async (req, res) => {
   }
 });
 
-/* --------------------------- CSV exports ------------------------- */
+/* ---------- CSV ---------- */
 app.get("/api/export/cameras.csv", (_req, res) => {
-  const cols = ["vrmId","name","address","recording","blockMounted","fw","connTime","allocatedBlocks","primaryTarget","maxBitrate"];
-  res.setHeader("Content-Type","text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition","attachment; filename=cameras.csv");
-  const stringifier = stringify({ header:true, columns: cols });
+  const cols = ["vrmId", "name", "address", "recording", "currentBlock", "fw", "connTime", "primaryTarget", "maxBitrate"];
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=cameras.csv");
+  const stringifier = stringify({ header: true, columns: cols });
   (lastSnapshot.cameras || []).forEach(c => stringifier.write(cols.map(k => c[k] ?? "")));
   stringifier.pipe(res);
 });
 
 app.get("/api/export/vrms.csv", (_req, res) => {
-  const cols = ["vrmId","totalGiB","availableGiB","emptyGiB","protectedGiB","targets","cameras"];
-  res.setHeader("Content-Type","text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition","attachment; filename=vrms.csv");
-  const stringifier = stringify({ header:true, columns: cols });
+  const cols = ["vrmId", "totalGiB", "availableGiB", "emptyGiB", "protectedGiB", "targets", "cameras"];
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=vrms.csv");
+  const stringifier = stringify({ header: true, columns: cols });
   (lastSnapshot.vrmStats || []).forEach(r => stringifier.write(cols.map(k => r[k] ?? "")));
   stringifier.pipe(res);
 });
 
-/* --------------------------- Boot server ------------------------- */
 app.listen(PORT, () => console.log(`BVMS DBG Dashboard en http://localhost:${PORT}`));

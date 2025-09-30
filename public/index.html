@@ -7,75 +7,103 @@
 </head>
 <body>
   <header>
-    <h1>BVMS • DBG Dashboard</h1>
-    <small>Último scan: <span id="ts">—</span></small>
+    <h1>BVMS DBG Dashboard</h1>
+    <div>Última consulta: <span id="ts">—</span></div>
   </header>
 
-  <section class="controls">
-    <textarea id="vrm-list" rows="3" placeholder="BVMS1 • VRM1 • 172.25.0.15
-BVMS1 • VRM2 • 172.25.0.18"></textarea>
-    <div>
-      <input id="dbg-user" placeholder="Usuario /dbg (srvadmin)">
-      <input id="dbg-pass" type="password" placeholder="Password">
-      <button id="btn-scan">Consultar</button>
-    </div>
-  </section>
+  <main>
+    <section class="controls">
+      <label>VRMs (site • nombre • IP):</label>
+      <textarea id="vrm-list" rows="3">BVMS1 • VRM1 • 172.20.67.94</textarea>
+      <div class="login-row">
+        Usuario /dbg: <input id="dbg-user" value="srvadmin">
+        Pass: <input id="dbg-pass" type="password" value="DFDgsfe01!">
+        <button id="btn-scan">Consultar</button>
+      </div>
+    </section>
 
-  <nav class="tabs">
-    <button class="tab-btn active" data-target="#page-overview">Overview</button>
-    <button class="tab-btn" data-target="#page-vrms">VRMs</button>
-    <button class="tab-btn" data-target="#page-cams">Cámaras</button>
-  </nav>
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-target="#tab-overview">Overview</button>
+      <button class="tab-btn" data-target="#tab-vrms">VRMs</button>
+      <button class="tab-btn" data-target="#tab-cams">Cámaras</button>
+    </nav>
 
-  <textarea id="progress" rows="6" readonly></textarea>
+    <!-- ===== OVERVIEW (nuevo: gráficos) ===== -->
+    <section id="tab-overview" class="tab-page">
+      <div class="cards-row">
+        <div class="card"><h2>Cámaras</h2><p id="card-total-cams">0</p></div>
+        <div class="card ok"><h2>Grabando</h2><p id="card-rec-cams">0</p></div>
+        <div class="card warn"><h2>Sin grabar</h2><p id="card-norec-cams">0</p></div>
+        <div class="card err"><h2>Sin bloques</h2><p id="card-noblocks-cams">0</p></div>
+      </div>
 
-  <!-- Overview -->
-  <section id="page-overview" class="tab-page">
-    <div class="cards">
-      <div class="card">Cámaras <span id="card-total-cams">0</span></div>
-      <div class="card success">Grabando <span id="card-rec-cams">0</span></div>
-      <div class="card warn">Sin grabar <span id="card-norec-cams">0</span></div>
-      <div class="card error">Sin bloques <span id="card-noblocks-cams">0</span></div>
-    </div>
-    <table id="tbl-overview">
-      <thead><tr>
-        <th>VRM</th><th>Nombre</th><th>IP/Canal</th>
-        <th>Recording</th><th>Bloque actual</th><th>FW</th><th>Conexión</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+      <div class="overview-grid">
+        <div class="panel">
+          <h3>Grabación (global)</h3>
+          <canvas id="chart-recording" height="160"></canvas>
+        </div>
 
-  <!-- VRMs -->
-  <section id="page-vrms" class="tab-page hidden">
-    <button id="btn-exp-vrms">Exportar VRMs CSV</button>
-    <table id="tbl-vrms">
-      <thead><tr>
-        <th>VRM</th><th>Targets</th><th>Cámaras</th>
-        <th>Total GiB</th><th>Disponible GiB</th>
-        <th>Vacío GiB</th><th>Protegido GiB</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+        <div class="panel">
+          <h3>Almacenamiento por VRM</h3>
+          <div id="vrm-storage-charts" class="storage-grid">
+            <!-- se llenará dinámicamente con tarjetas por VRM -->
+          </div>
+        </div>
+      </div>
 
-  <!-- Cámaras -->
-  <section id="page-cams" class="tab-page hidden">
-    <div class="filters">
-      <input id="filter-name" placeholder="Filtrar por nombre">
-      <input id="filter-ip" placeholder="Filtrar por IP/canal">
-      <button id="btn-exp-cams">Exportar Cámaras CSV</button>
-    </div>
-    <table id="tbl-cams">
-      <thead><tr>
-        <th>VRM</th><th>Nombre</th><th>IP/Canal</th><th>Recording</th>
-        <th>Bloque</th><th>FW</th><th>Conexión</th>
-        <th>Target</th><th>Bitrate máx</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-  </section>
+      <h3 class="mt">Detalle (consolidado)</h3>
+      <table id="tbl-overview">
+        <thead>
+          <tr>
+            <th>VRM</th><th>Nombre</th><th>IP/Canal</th>
+            <th>Recording</th><th>Bloque actual</th><th>FW</th><th>Conexión</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
 
+    <!-- ===== VRMs ===== -->
+    <section id="tab-vrms" class="tab-page hidden">
+      <div class="toolbar">
+        <button id="btn-exp-vrms">Exportar CSV VRMs</button>
+      </div>
+      <table id="tbl-vrms">
+        <thead>
+          <tr>
+            <th>VRM</th><th>Targets</th><th>Cámaras</th>
+            <th>Total GiB</th><th>Disponibles</th><th>Vacíos</th><th>Protegidos</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- ===== CÁMARAS ===== -->
+    <section id="tab-cams" class="tab-page hidden">
+      <div class="toolbar">
+        Filtro nombre: <input id="filter-name" placeholder="Nombre…">
+        Filtro IP: <input id="filter-ip" placeholder="IP/canal…">
+        <button id="btn-exp-cams">Exportar CSV Cámaras</button>
+      </div>
+      <table id="tbl-cams">
+        <thead>
+          <tr>
+            <th>VRM</th><th>Nombre</th><th>IP/Canal</th>
+            <th>Recording</th><th>Bloques</th><th>FW</th><th>Conexión</th>
+            <th>Target</th><th>Bitrate máx</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <h3 class="mt">Progreso</h3>
+    <textarea id="progress" readonly></textarea>
+  </main>
+
+  <!-- Chart.js desde CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
