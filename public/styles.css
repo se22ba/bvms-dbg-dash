@@ -116,6 +116,14 @@ button:hover { filter: brightness(1.05); }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: .6rem;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  resize: both;
+  overflow: hidden;
+  min-width: 260px;
+  min-height: 220px;
+  height: 260px;
 }
 .storage-card-head {
   display:flex; align-items:center; justify-content:space-between;
@@ -123,6 +131,19 @@ button:hover { filter: brightness(1.05); }
 }
 .storage-card .title { font-weight: 600; }
 .storage-card .meta  { color: var(--muted); font-size: .9rem; }
+.storage-chart-area {
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+}
+
+.storage-chart-area canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
 
 .mt { margin-top: 1rem; }
 
@@ -157,22 +178,7 @@ td.num { text-align: right; }
 .sortable th.sort-asc::after  { content: " ▲"; font-size: 0.9em; color: #9ec1ff; }
 .sortable th.sort-desc::after { content: " ▼"; font-size: 0.9em; color: #9ec1ff; }
 
-/* Charts redimensionables con el mouse */
-.resizable {
-  background: var(--bg-3);
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  resize: both;         /* <-- arrastrable */
-  overflow: auto;
-  min-width: 260px;
-  min-height: 160px;
-  max-width: 100%;
-}
-.resizable > canvas {
-  width: 100% !important;
-  height: 100% !important;
-  display: block;
-}
+
 
 /* responsive tweaks */
 @media (max-width: 1024px) {

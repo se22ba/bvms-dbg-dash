@@ -2,36 +2,36 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>BVMS DBG Dashboard</title>
+  <title>Scraper Master</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header>
-    <h1>BVMS DBG Dashboard</h1>
+    <h1>Scraper Master</h1>
     <div>Última consulta: <span id="ts">—</span></div>
   </header>
 
   <main>
     <section class="controls">
-      <label>VRMs (site • nombre • IP):</label>
+      <label>VRMs:</label>
       <textarea id="vrm-list" rows="3">BVMS1 • VRM1 • 172.20.67.94</textarea>
 
       <div class="login-row">
-        Usuario /dbg: <input id="dbg-user" value="srvadmin">
+        Usuario: <input id="dbg-user" value="srvadmin">
         Pass: <input id="dbg-pass" type="password" value="DFDgsfe01!">
         <button id="btn-scan">Consultar</button>
       </div>
 
-      <!-- ====== NUEVO: Adjuntar HTML offline ====== -->
+      
       <div class="login-row" style="margin-top:.25rem">
-        <strong>Adjuntar HTML (offline):</strong>
+        <strong>Adjuntar HTML:</strong>
         Etiqueta VRM: <input id="import-label" placeholder="BVMS1 • VRM1 • 172.20.67.94">
         <input id="import-files" type="file" accept=".htm,.html" multiple>
         <button id="btn-import">Adjuntar</button>
       </div>
       <small style="color:#8b949e">
-        Cargá uno o varios: <code>showCameras.htm</code>, <code>showDevices.htm</code>, <code>showTargets.htm</code>.
-        Se fusionan bajo la etiqueta indicada.
+        <code>showCameras.htm</code>, <code>showDevices.htm</code>, <code>showTargets.htm</code>.
+        
       </small>
     </section>
 
@@ -66,7 +66,7 @@
         </div>
       </div>
 
-      <h3 class="mt">Detalle (consolidado)</h3>
+      <h3 class="mt">Detalle</h3>
       <table id="tbl-overview">
         <thead>
           <tr>
@@ -113,7 +113,7 @@
       </table>
     </section>
 
-    <h3 class="mt">Progreso</h3>
+    <h3 class="mt">Consola</h3>
     <textarea id="progress" readonly></textarea>
   </main>
 

@@ -36,7 +36,7 @@
     recording: null,
     storageByVrm: new Map(),
   };
-
+const storageResizeObservers = new Map();
   // Upload offline
   const inputFiles  = $("#import-files");
   const inputLabel  = $("#import-label");
@@ -103,7 +103,7 @@
   /* ------ Overview cards ------ */
   function updateOverviewCards() {
     const cams = snapshot.cameras || [];
-    onst rec = cams.filter(isRecording).length; // insensitive
+    const rec = cams.filter(isRecording).length; // insensitive
     const noRec = cams.length - rec;
     const noBlock = cams.filter(c => !cameraHasBlock(c)).length;
 
@@ -178,7 +178,9 @@
             <div class="title">${vrmId}</div>
             <div class="meta">Total: ${total} GiB</div>
           </div>
-          <canvas height="200"></canvas>
+          <div class="storage-chart-area">
+            <canvas></canvas>
+          </div>
         `;
         storageHost.appendChild(card);
       } else {
@@ -224,6 +226,14 @@
           }
         });
         charts.storageByVrm.set(vrmId, chart);
+         if (!storageResizeObservers.has(vrmId) && window.ResizeObserver) {
+          const observer = new ResizeObserver(() => {
+            const targetChart = charts.storageByVrm.get(vrmId);
+            if (targetChart) targetChart.resize();
+          });
+          observer.observe(card);
+          storageResizeObservers.set(vrmId, observer);
+        }
       }
     });
 
@@ -234,6 +244,11 @@
         charts.storageByVrm.delete(vrmId);
         const deadCard = storageHost.querySelector(`[data-vrm-id="${cssEscape(vrmId)}"]`);
         if (deadCard) deadCard.remove();
+        const observer = storageResizeObservers.get(vrmId);
+        if (observer) {
+          observer.disconnect();
+          storageResizeObservers.delete(vrmId);
+        }
       }
     });
   }
