@@ -38,9 +38,9 @@
   };
 
   // Upload offline
-  const inputFiles  = $("#offline-files");
-  const inputLabel  = $("#offline-label");
-  const btnAttach   = $("#btn-attach");
+  const inputFiles  = $("#import-files");
+  const inputLabel  = $("#import-label");
+  const btnAttach   = $("#btn-import");
 
   let snapshot = { cameras: [], vrmStats: [], vrms: [], progress: [], ts: 0 };
 
