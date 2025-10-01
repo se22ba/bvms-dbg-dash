@@ -13,11 +13,15 @@
   const tabPages    = $$(".tab-page");
 
   // Overview
-  const cardTotalCams   = $("#card-total-cams");
-  const cardRecCams     = $("#card-rec-cams");
-  const cardNoRecCams   = $("#card-norec-cams");
-  const cardNoBlocks    = $("#card-noblocks-cams");
-  const tblOverviewBody = $("#tbl-overview tbody");
+  const cardTotalChannels   = $("#card-total-channels");
+  const cardActiveRecord    = $("#card-active-recordings");
+  const cardOfflineChannels = $("#card-offline-channels");
+  const cardSignalLoss      = $("#card-signal-loss");
+  const cardVmsIssues       = $("#card-vms-issues");
+  const cardExternalIssues  = $("#card-external-issues");
+  const tblDevicesBody      = $("#tbl-devices tbody");
+  const storageDetailHost   = $("#storage-detail");
+  const loadDetailHost      = $("#load-detail");
 
   // VRMs
   const tblVrmsBody     = $("#tbl-vrms tbody");
@@ -33,7 +37,7 @@
   const recordingCanvas = $("#chart-recording");
   const storageHost     = $("#vrm-storage-charts");
   let charts = {
-    recording: null,
+    cameraStatus: null,
     storageByVrm: new Map(),
   };
 const storageResizeObservers = new Map();
@@ -42,7 +46,7 @@ const storageResizeObservers = new Map();
   const inputLabel  = $("#import-label");
   const btnAttach   = $("#btn-import");
 
-  let snapshot = { cameras: [], vrmStats: [], vrms: [], progress: [], ts: 0 };
+  let snapshot = { cameras: [], vrmStats: [], vrms: [], progress: [], ts: 0, overviewTotals: {}, cameraStatus: {}, dashboards: [] };
 
   
   tabButtons.forEach(b => {
@@ -52,7 +56,7 @@ const storageResizeObservers = new Map();
       b.classList.add("active");
       $(b.getAttribute("data-target")).classList.remove("hidden");
       setTimeout(() => {
-        if (charts.recording) charts.recording.resize();
+        if (charts.cameraStatus) charts.cameraStatus.resize();
         charts.storageByVrm.forEach(ch => ch.resize());
       }, 50);
     });
@@ -72,6 +76,40 @@ const storageResizeObservers = new Map();
       });
   }
   function nice(s){ return (s==null ? "" : String(s)); }
+  
+  const numberFormatter = new Intl.NumberFormat("es-AR");
+
+  function isFiniteNumber(value) {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+
+  function formatMetric(value) {
+    if (value == null || value === "") return "—";
+    if (isFiniteNumber(value)) return numberFormatter.format(value);
+    const num = Number(String(value).replace(/\s+/g, "").replace(/,/g, "."));
+    if (Number.isFinite(num)) return numberFormatter.format(num);
+    return String(value);
+  }
+
+  function getDashboardSection(vrm, key) {
+    return vrm?.dashboard?.[key] || vrm?.[key] || null;
+  }
+
+  function getDeviceMetric(vrm, key) {
+    return vrm?.dashboard?.devices?.metrics?.[key];
+  }
+
+  function getDeviceMetricText(vrm, key) {
+    return vrm?.dashboard?.devices?.metricsText?.[key] ?? null;
+  }
+
+  function pickDisplayMetric(vrm, key) {
+    const metric = getDeviceMetric(vrm, key);
+    if (metric != null && metric !== "") return { value: metric, numeric: true };
+    const text = getDeviceMetricText(vrm, key);
+    if (text != null && text !== "") return { value: text, numeric: false };
+    return { value: "—", numeric: false };
+  }
    function getRawValue(cam, ...keys) {
     const raw = cam?.raw;
     if (!raw) return "";
@@ -85,12 +123,7 @@ const storageResizeObservers = new Map();
     }
     return "";
   }
-  function cameraHasBlock(cam) {
-    const direct = cam?.currentBlock;
-    if (direct && String(direct).trim() !== "") return true;
-    const raw = getRawValue(cam, "Current block");
-    return String(raw).trim() !== "";
-  }
+  
   function isRecording(cam) {
     const val = cam?.recordingNormalized || cam?.recording || "";
     return /record/i.test(String(val));
@@ -100,39 +133,72 @@ const storageResizeObservers = new Map();
     progressBox.scrollTop = progressBox.scrollHeight;
   }
 
-  /
-  function updateOverviewCards() {
+    function computeCameraStatusLocal() {
     const cams = snapshot.cameras || [];
-    const rec = cams.filter(isRecording).length; 
-    const noRec = cams.length - rec;
-    const noBlock = cams.filter(c => !cameraHasBlock(c)).length;
-
-    cardTotalCams.textContent = cams.length;
-    cardRecCams.textContent   = rec;
-    cardNoRecCams.textContent = noRec;
-    cardNoBlocks.textContent  = noBlock;
+    const summary = { recording: 0, recordingDisabled: 0, pending: 0, offline: 0, other: 0, total: cams.length };
+    cams.forEach(cam => {
+      const state = String(cam?.recording || "").trim().toLowerCase();
+      if (!state) { summary.other += 1; return; }
+      if (state.includes("recording disabled")) summary.recordingDisabled += 1;
+      else if (state.includes("pending") && (state.includes("no blocks") || state.includes("connecting to storage"))) summary.pending += 1;
+      else if (state.includes("offline") || state.includes("off-line")) summary.offline += 1;
+      else if (state.includes("record")) summary.recording += 1;
+      else summary.other += 1;
+    });
+    summary.vmsIssues = (summary.recordingDisabled || 0) + (summary.pending || 0);
+    summary.externalIssues = summary.offline || 0;
+    return summary;
+    
   }
 
+   function getCameraStatusSummary() {
+    if (snapshot.cameraStatus && typeof snapshot.cameraStatus === "object") {
+      const s = { ...snapshot.cameraStatus };
+      if (s.total == null) s.total = snapshot.cameras?.length || 0;
+      if (s.vmsIssues == null) s.vmsIssues = (s.recordingDisabled || 0) + (s.pending || 0);
+      if (s.externalIssues == null) s.externalIssues = s.offline || 0;
+      return s;
+    }
+    const computed = computeCameraStatusLocal();
+    snapshot.cameraStatus = computed;
+    return computed;
+  }
   
-  function renderRecordingChart() {
-    const cams = snapshot.cameras || [];
-    const rec = cams.filter(isRecording).length;
-    const noBlock = cams.filter(c => !cameraHasBlock(c)).length;
-    const noRec = cams.length - rec;
 
-    const data = {
-      labels: ["Grabando", "Sin grabar", "Sin bloque"],
-      datasets: [{ data: [rec, Math.max(noRec - noBlock, 0), noBlock] }]
-    };
+     function updateOverviewCards() {
+    const totals = snapshot.overviewTotals || {};
+    const status = getCameraStatusSummary();
+    const statusTotal = status.total ?? (snapshot.cameras?.length || 0);
 
-    if (charts.recording) {
-      charts.recording.data.labels = data.labels;
-      charts.recording.data.datasets[0].data = data.datasets[0].data;
-      charts.recording.update();
+    cardTotalChannels.textContent   = formatMetric(totals.totalChannels);
+    cardActiveRecord.textContent    = formatMetric(totals.activeRecordings);
+    cardOfflineChannels.textContent = formatMetric(totals.offlineChannels);
+    cardSignalLoss.textContent      = formatMetric(totals.signalLoss);
+    cardVmsIssues.textContent       = formatMetric(statusTotal > 0 ? (status.vmsIssues ?? 0) : null);
+    cardExternalIssues.textContent  = formatMetric(statusTotal > 0 ? (status.externalIssues ?? 0) : null);
+  }
+
+    function renderCameraStatusChart() {
+    const status = getCameraStatusSummary();
+    const baseData = [status.recording || 0, status.recordingDisabled || 0, status.pending || 0, status.offline || 0];
+    const labels = ["Grabando", "Recording disabled", "Pending", "Offline"];
+    const total = status.total || baseData.reduce((a, b) => a + b, 0);
+    const other = Math.max(total - baseData.reduce((a, b) => a + b, 0), 0);
+    if (other > 0) {
+      baseData.push(other);
+      labels.push("Otros");
+    }
+
+    const data = { labels, datasets: [{ data: baseData }] };
+
+    if (charts.cameraStatus) {
+      charts.cameraStatus.data.labels = data.labels;
+      charts.cameraStatus.data.datasets[0].data = data.datasets[0].data;
+      charts.cameraStatus.update();
       return;
     }
 
-    charts.recording = new Chart(recordingCanvas.getContext("2d"), {
+    charts.cameraStatus = new Chart(recordingCanvas.getContext("2d"), {
       type: "doughnut",
       data,
       options: {
@@ -254,23 +320,85 @@ const storageResizeObservers = new Map();
   }
 
   
-  function updateOverviewTable(){
-    const cams = snapshot.cameras || [];
-    tblOverviewBody.innerHTML = "";
-    cams.forEach(c => {
+  function updateDevicesTable(){
+    const rows = snapshot.vrms || [];
+    tblDevicesBody.innerHTML = "";
+
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="5" class="kv-empty">Sin datos disponibles.</td>`;
+      tblDevicesBody.appendChild(tr);
+      return;
+    }
+
+    rows.forEach(v => {
+      const total = pickDisplayMetric(v, "totalChannels");
+      const offline = pickDisplayMetric(v, "offlineChannels");
+      const active = pickDisplayMetric(v, "activeRecordings");
+      const loss = pickDisplayMetric(v, "signalLoss");
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${nice(c.vrmId)}</td>
-        <td>${nice(c.name)}</td>
-        <td>${nice(c.address)}</td>
-        <td>${nice(c.recording)}</td>
-        <td>${nice(c.currentBlock || getRawValue(c, "Current block") || "")}</td>
-        <td>${nice(c.fw)}</td>
-        <td>${nice(c.connTime)}</td>
+        <td>${nice(v.vrmId)}</td>
+        <td class="num" data-value="${total.numeric ? total.value : ""}">${totalText}</td>
+        <td class="num" data-value="${offline.numeric ? offline.value : ""}">${offlineText}</td>
+        <td class="num" data-value="${active.numeric ? active.value : ""}">${activeText}</td>
+        <td class="num" data-value="${loss.numeric ? loss.value : ""}">${lossText}</td>
       `;
-      tblOverviewBody.appendChild(tr);
+       tblDevicesBody.appendChild(tr);
     });
-    applySort("tbl-overview");
+    applySort("tbl-devices");
+  }
+
+  function renderDashboardSectionCards(container, sectionKey) {
+    if (!container) return;
+    container.innerHTML = "";
+
+    const rows = snapshot.vrms || [];
+    let any = false;
+
+    rows.forEach(v => {
+      const section = getDashboardSection(v, sectionKey);
+      const entries = section?.entries || [];
+      if (!entries.length) return;
+      any = true;
+      const card = document.createElement("div");
+      card.className = "kv-card";
+
+      const head = document.createElement("div");
+      head.className = "kv-card-head";
+      head.textContent = nice(v.vrmId);
+      card.appendChild(head);
+
+      const list = document.createElement("dl");
+      list.className = "kv-list";
+
+      entries.forEach(entry => {
+        const row = document.createElement("div");
+        row.className = "kv-item";
+        const dt = document.createElement("dt");
+        dt.textContent = nice(entry.label);
+        const dd = document.createElement("dd");
+        const displayValue = entry.valueText && entry.valueText.trim() !== "" ? entry.valueText : (entry.number != null ? formatMetric(entry.number) : "—");
+        dd.textContent = displayValue;
+        row.appendChild(dt);
+        row.appendChild(dd);
+        list.appendChild(row);
+      });
+
+      card.appendChild(list);
+      container.appendChild(card);
+    });
+     if (!any) {
+      const empty = document.createElement("div");
+      empty.className = "kv-empty";
+      empty.textContent = "Sin datos disponibles.";
+      container.appendChild(empty);
+    }
+  }
+
+  function renderDashboardSections() {
+    renderDashboardSectionCards(storageDetailHost, "storage");
+    renderDashboardSectionCards(loadDetailHost, "load");
   }
 
   
@@ -328,9 +456,10 @@ const storageResizeObservers = new Map();
     tsBox.textContent = snapshot.ts ? new Date(snapshot.ts).toLocaleString() : "—";
     renderProgress(snapshot.progress || []);
     updateOverviewCards();
-    renderRecordingChart();
+    renderCameraStatusChart();
     buildOrUpdateStorageCharts();
-    updateOverviewTable();
+    updateDevicesTable();
+    renderDashboardSections();
     updateVrms();
     updateCamerasTable();
   }
@@ -390,7 +519,7 @@ const storageResizeObservers = new Map();
       });
     });
   }
-  setupSortable("tbl-overview");
+  setupSortable("tbl-devices");
   setupSortable("tbl-vrms");
   setupSortable("tbl-cams");
 
@@ -414,7 +543,10 @@ const storageResizeObservers = new Map();
         vrmStats: data.vrmStats || [],
         vrms: data.vrms || [],
         progress: data.progress || [],
-        ts: data.ts || Date.now()
+        ts: data.ts || Date.now(),
+        overviewTotals: data.overviewTotals || {},
+        cameraStatus: data.cameraStatus || {},
+        dashboards: data.dashboards || []
       };
       renderAll();
     }catch(e){
@@ -425,7 +557,7 @@ const storageResizeObservers = new Map();
   
   btnAttach.addEventListener("click", async () => {
     if (!inputFiles.files || !inputFiles.files.length) {
-      alert("Adjuntá al menos un HTML (showCameras/showDevices/showTargets).");
+       alert("Adjuntá al menos un HTML (showCameras/showDevices/showTargets/Bosch VRM).");
       return;
     }
     const fd = new FormData();
@@ -441,7 +573,10 @@ const storageResizeObservers = new Map();
         vrmStats: data.vrmStats || [],
         vrms: data.vrms || [],
         progress: data.progress || [],
-        ts: data.ts || Date.now()
+        ts: data.ts || Date.now(),
+        overviewTotals: data.overviewTotals || {},
+        cameraStatus: data.cameraStatus || {},
+        dashboards: data.dashboards || []
       };
       renderAll();
       

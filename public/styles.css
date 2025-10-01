@@ -76,7 +76,7 @@ button:hover { filter: brightness(1.05); }
 
 .cards-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0,1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: .75rem;
 }
 .card {
@@ -94,7 +94,7 @@ button:hover { filter: brightness(1.05); }
 
 .overview-grid {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: minmax(280px, 420px) 1fr;
   gap: 1rem;
   margin-top: 1rem;
 }
@@ -159,6 +159,57 @@ th, td {
 }
 th { background: var(--bg-3); }
 td.num { text-align: right; }
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: .75rem;
+  margin-top: .6rem;
+}
+
+.kv-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.kv-card-head {
+  font-weight: 600;
+}
+
+.kv-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .3rem;
+}
+
+.kv-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .5rem;
+  align-items: center;
+}
+
+.kv-item dt {
+  margin: 0;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.kv-item dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.kv-empty {
+  color: var(--muted);
+  margin-top: .5rem;
+}
 
 #progress {
   width: 100%;

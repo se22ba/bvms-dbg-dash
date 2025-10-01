@@ -44,15 +44,17 @@
     <!-- ===== OVERVIEW ===== -->
     <section id="tab-overview" class="tab-page">
       <div class="cards-row">
-        <div class="card"><h2>Cámaras</h2><p id="card-total-cams">0</p></div>
-        <div class="card ok"><h2>Grabando</h2><p id="card-rec-cams">0</p></div>
-        <div class="card warn"><h2>Sin grabar</h2><p id="card-norec-cams">0</p></div>
-        <div class="card err"><h2>Sin bloques</h2><p id="card-noblocks-cams">0</p></div>
+        <div class="card"><h2>Canales totales</h2><p id="card-total-channels">—</p></div>
+        <div class="card ok"><h2>Grabaciones activas</h2><p id="card-active-recordings">—</p></div>
+        <div class="card warn"><h2>Fuera de línea</h2><p id="card-offline-channels">—</p></div>
+        <div class="card err"><h2>Pérdida de señal</h2><p id="card-signal-loss">—</p></div>
+        <div class="card warn"><h2>Problemas VMS</h2><p id="card-vms-issues">—</p></div>
+        <div class="card err"><h2>Problemas ajenos</h2><p id="card-external-issues">—</p></div>
       </div>
 
       <div class="overview-grid">
         <div class="panel">
-          <h3>Grabación (global)</h3>
+          <h3>Estado de cámaras (showCameras)</h3>
           <div class="resizable" style="width:100%;height:220px;">
             <canvas id="chart-recording"></canvas>
           </div>
@@ -66,16 +68,24 @@
         </div>
       </div>
 
-      <h3 class="mt">Detalle</h3>
-      <table id="tbl-overview">
+      <h3 class="mt">Dispositivos por VRM (Bosch VRM)</h3>
+      <table id="tbl-devices">
         <thead>
           <tr>
-            <th>VRM</th><th>Nombre</th><th>IP/Canal</th>
-            <th>Recording</th><th>Bloque actual</th><th>FW</th><th>Conexión</th>
+             <th>VRM</th>
+            <th>Canales totales</th>
+            <th>Fuera de línea</th>
+            <th>Grabaciones activas</th>
+            <th>Pérdida de señal</th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
+      <h3 class="mt">Almacenamiento (Bosch VRM)</h3>
+      <div id="storage-detail" class="kv-grid"></div>
+
+      <h3 class="mt">Compensación de carga (Bosch VRM)</h3>
+      <div id="load-detail" class="kv-grid"></div>
     </section>
 
     <!-- ===== VRMs ===== -->
