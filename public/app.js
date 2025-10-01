@@ -72,6 +72,29 @@
       });
   }
   function nice(s){ return (s==null ? "" : String(s)); }
+   function getRawValue(cam, ...keys) {
+    const raw = cam?.raw;
+    if (!raw) return "";
+    for (const key of keys) {
+      if (!key) continue;
+      const candidates = [key, key.toLowerCase()];
+      for (const cand of candidates) {
+        const val = raw[cand];
+        if (val != null && String(val).trim() !== "") return val;
+      }
+    }
+    return "";
+  }
+  function cameraHasBlock(cam) {
+    const direct = cam?.currentBlock;
+    if (direct && String(direct).trim() !== "") return true;
+    const raw = getRawValue(cam, "Current block");
+    return String(raw).trim() !== "";
+  }
+  function isRecording(cam) {
+    const val = cam?.recordingNormalized || cam?.recording || "";
+    return /record/i.test(String(val));
+  }
   function renderProgress(lines){
     progressBox.value = (lines || []).join("\n");
     progressBox.scrollTop = progressBox.scrollHeight;
@@ -80,9 +103,9 @@
   /* ------ Overview cards ------ */
   function updateOverviewCards() {
     const cams = snapshot.cameras || [];
-    const rec = cams.filter(c => /record/i.test(c.recording || "")).length; // insensitive
+    onst rec = cams.filter(isRecording).length; // insensitive
     const noRec = cams.length - rec;
-    const noBlock = cams.filter(c => !c.raw || !c.raw["Current block"]).length;
+    const noBlock = cams.filter(c => !cameraHasBlock(c)).length;
 
     cardTotalCams.textContent = cams.length;
     cardRecCams.textContent   = rec;
@@ -93,8 +116,8 @@
   /* ------ Recording chart ------ */
   function renderRecordingChart() {
     const cams = snapshot.cameras || [];
-    const rec = cams.filter(c => /record/i.test(c.recording || "")).length;
-    const noBlock = cams.filter(c => !c.raw || !c.raw["Current block"]).length;
+    const rec = cams.filter(isRecording).length;
+    const noBlock = cams.filter(c => !cameraHasBlock(c)).length;
     const noRec = cams.length - rec;
 
     const data = {
@@ -103,7 +126,8 @@
     };
 
     if (charts.recording) {
-      charts.recording.data = data;
+      charts.recording.data.labels = data.labels;
+      charts.recording.data.datasets[0].data = data.datasets[0].data;
       charts.recording.update();
       return;
     }
@@ -133,11 +157,16 @@
       const vrmId = v.vrmId;
       seen.add(vrmId);
 
-      const total = Number(v.totalGiB || 0);
-      const available = Number(v.availableGiB || 0);
-      const empty = Number(v.emptyGiB || 0);
-      const protectedGiB = Number(v.protectedGiB || 0);
-      const used = Math.max(0, total - (available + empty + protectedGiB));
+       const clamp = (value, min, max) => {
+        const upper = Math.max(max, min);
+        return Math.min(Math.max(Number(value || 0), min), upper);
+      };
+      const total = Math.max(Number(v.totalGiB || 0), 0);
+      const available = clamp(v.availableGiB, 0, total);
+      const used = Math.max(0, total - available);
+      const empty = clamp(v.emptyGiB, 0, total - used);
+      const protectedGiB = clamp(v.protectedGiB, 0, total - used - empty);
+      const otherFree = Math.max(0, total - used - empty - protectedGiB);
 
       let card = storageHost.querySelector(`[data-vrm-id="${cssEscape(vrmId)}"]`);
       if (!card) {
@@ -161,12 +190,13 @@
       const ctx = canvas.getContext("2d");
       const dataset = {
         labels: ["Used", "Available", "Empty", "Protected"],
-        datasets: [{ label: "GiB", data: [used, available, empty, protectedGiB], borderWidth: 0 }]
+        datasets: [{ label: "GiB", data: [used, otherFree, empty, protectedGiB], borderWidth: 0 }]
       };
 
       if (charts.storageByVrm.has(vrmId)) {
         const chart = charts.storageByVrm.get(vrmId);
-        chart.data = dataset;
+        chart.data.labels = dataset.labels;
+        chart.data.datasets[0].data = dataset.datasets[0].data;
         chart.update();
       } else {
         const chart = new Chart(ctx, {
@@ -219,7 +249,7 @@
         <td>${nice(c.name)}</td>
         <td>${nice(c.address)}</td>
         <td>${nice(c.recording)}</td>
-        <td>${nice(c.currentBlock || c.raw?.["Current block"] || "")}</td>
+        <td>${nice(c.currentBlock || getRawValue(c, "Current block") || "")}</td>
         <td>${nice(c.fw)}</td>
         <td>${nice(c.connTime)}</td>
       `;
@@ -260,7 +290,7 @@
 
     tblCamsBody.innerHTML = "";
     cams.forEach(c => {
-      const block = c.currentBlock || c.raw?.["Current block"] || "";
+      const block = c.currentBlock || getRawValue(c, "Current block") || "";
       const max   = c.maxBitrate ?? "";
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -271,7 +301,7 @@
         <td>${nice(block)}</td>
         <td>${nice(c.fw)}</td>
         <td>${nice(c.connTime)}</td>
-        <td>${nice(c.primaryTarget || c.raw?.["Primary target"] || "")}</td>
+        <td>${nice(c.primaryTarget || getRawValue(c, "Primary target") || "")}</td>
         <td class="num" data-value="${max}">${nice(max)}</td>
       `;
       tblCamsBody.appendChild(tr);

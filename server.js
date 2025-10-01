@@ -186,15 +186,29 @@ function parseCameras(html, vrmId) {
   const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
 
   const $tbl = $("table").first();
-  const headers = $tbl.find("tr").first().find("th").map((i, th) => norm($(th).text())).get();
-  const idxBy = (label) => headers.findIndex(h => h === norm(label));
+  const headerCells = $tbl.find("tr").first().find("th");
+  const headerTexts = headerCells.map((i, th) => $(th).text().replace(/\s+/g, " ").trim()).get();
+  const headers = headerTexts.map(norm);
+  const idxByAny = (...labels) => {
+    for (const label of labels) {
+      const target = norm(label);
+      const exact = headers.findIndex(h => h === target);
+      if (exact >= 0) return exact;
+    }
+    for (const label of labels) {
+      const target = norm(label);
+      const partial = headers.findIndex(h => h.includes(target));
+      if (partial >= 0) return partial;
+    }
+    return -1;
+  };
 
-  const iName          = idxBy("camera name");
-  const iAddr          = idxBy("address");
-  const iRec           = idxBy("recording");
-  const iCurBlock      = idxBy("current block");
-  const iPrimaryTarget = idxBy("primary target");
-  const iMaxBitrate    = idxBy("max bitrate");
+  const iName          = idxByAny("camera name", "name");
+  const iAddr          = idxByAny("address", "ip");
+  const iRec           = idxByAny("recording state", "recording");
+  const iCurBlock      = idxByAny("current block");
+  const iPrimaryTarget = idxByAny("primary target");
+  const iMaxBitrate    = idxByAny("max bitrate", "maximum bitrate");
 
   $tbl.find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
@@ -203,15 +217,32 @@ function parseCameras(html, vrmId) {
 
     const name          = get(iName);
     const address       = get(iAddr);             // 172.20.65.85\0\1
-    const recording     = get(iRec).toLowerCase();
+    const recordingText = get(iRec);
+    const recordingNorm = recordingText.toLowerCase();
     const currentBlock  = get(iCurBlock);
     const primaryTarget = get(iPrimaryTarget);
     const maxBitrateCam = Number(get(iMaxBitrate).replace(",", ".")) || null;
 
     const raw = {};
-    headers.forEach((h, i) => raw[h] = td.eq(i).text().trim());
+     headerTexts.forEach((h, i) => {
+      if (!h) return;
+      const value = td.eq(i).text().trim();
+      raw[h] = value;
+      const normalized = headers[i];
+      if (normalized && !(normalized in raw)) raw[normalized] = value;
+    });
 
-    rows.push({ vrmId, name, address, recording, currentBlock, primaryTarget, maxBitrateCam, raw });
+     rows.push({
+      vrmId,
+      name,
+      address,
+      recording: recordingText,
+      recordingNormalized: recordingNorm,
+      currentBlock,
+      primaryTarget,
+      maxBitrateCam,
+      raw
+    });
   });
 
   return rows;
