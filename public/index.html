@@ -15,11 +15,24 @@
     <section class="controls">
       <label>VRMs (site • nombre • IP):</label>
       <textarea id="vrm-list" rows="3">BVMS1 • VRM1 • 172.20.67.94</textarea>
+
       <div class="login-row">
         Usuario /dbg: <input id="dbg-user" value="srvadmin">
         Pass: <input id="dbg-pass" type="password" value="DFDgsfe01!">
         <button id="btn-scan">Consultar</button>
       </div>
+
+      <!-- ====== NUEVO: Adjuntar HTML offline ====== -->
+      <div class="login-row" style="margin-top:.25rem">
+        <strong>Adjuntar HTML (offline):</strong>
+        Etiqueta VRM: <input id="import-label" placeholder="BVMS1 • VRM1 • 172.20.67.94">
+        <input id="import-files" type="file" accept=".htm,.html" multiple>
+        <button id="btn-import">Adjuntar</button>
+      </div>
+      <small style="color:#8b949e">
+        Cargá uno o varios: <code>showCameras.htm</code>, <code>showDevices.htm</code>, <code>showTargets.htm</code>.
+        Se fusionan bajo la etiqueta indicada.
+      </small>
     </section>
 
     <nav class="tab-bar">
@@ -28,7 +41,7 @@
       <button class="tab-btn" data-target="#tab-cams">Cámaras</button>
     </nav>
 
-    <!-- ===== OVERVIEW (nuevo: gráficos) ===== -->
+    <!-- ===== OVERVIEW ===== -->
     <section id="tab-overview" class="tab-page">
       <div class="cards-row">
         <div class="card"><h2>Cámaras</h2><p id="card-total-cams">0</p></div>
@@ -40,13 +53,15 @@
       <div class="overview-grid">
         <div class="panel">
           <h3>Grabación (global)</h3>
-          <canvas id="chart-recording" height="160"></canvas>
+          <div class="resizable" style="width:100%;height:220px;">
+            <canvas id="chart-recording"></canvas>
+          </div>
         </div>
 
         <div class="panel">
           <h3>Almacenamiento por VRM</h3>
           <div id="vrm-storage-charts" class="storage-grid">
-            <!-- se llenará dinámicamente con tarjetas por VRM -->
+            <!-- tarjetas por VRM -->
           </div>
         </div>
       </div>
@@ -102,7 +117,6 @@
     <textarea id="progress" readonly></textarea>
   </main>
 
-  <!-- Chart.js desde CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="app.js"></script>
 </body>

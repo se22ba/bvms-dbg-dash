@@ -7,6 +7,7 @@ import { stringify } from "csv-stringify";
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
+import multer from "multer";
 
 dotenv.config();
 
@@ -15,10 +16,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
-const PORT = process.env.PORT || 3000;
+const upload = multer({ storage: multer.memoryStorage() });
 
-// Si tenés VRMs por defecto en .env:
-// VRMS=[{"site":"BVMS1","name":"VRM1","host":"172.20.67.94"}]
+const PORT = process.env.PORT || 3000;
 const DEFAULT_VRMS = (() => {
   try { return JSON.parse(process.env.VRMS || "[]"); } catch { return []; }
 })();
@@ -28,30 +28,34 @@ const DBG_PASS = process.env.DBG_PASS || "DFDgsfe01!";
 
 const httpsAgent = new HttpsAgent({ rejectUnauthorized: false });
 
+/* ---------------- last snapshot ---------------- */
 let lastSnapshot = { ts: 0, vrms: [], cameras: [], vrmStats: [], progress: [] };
 
-/* ---------- FS helpers ---------- */
+/* ---------------- FS helpers ------------------- */
 const RAW_DIR = path.resolve(process.cwd(), "data", "raw");
 fs.mkdirSync(RAW_DIR, { recursive: true });
+
 function saveHtml(host, name, html) {
-  const dir = path.join(RAW_DIR, host);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, name), html, "utf8");
+  try {
+    const dir = path.join(RAW_DIR, host);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), html, "utf8");
+  } catch {}
 }
 
-/* ---------- HTTP utils ---------- */
+/* ---------------- HTTP utils ------------------- */
 function authHeader(u, p) {
   return { Authorization: "Basic " + Buffer.from(`${u}:${p}`).toString("base64") };
 }
-
-async function fetchWithTimeout(url, { https = true, headers = {}, timeoutMs = 15000 } = {}) {
+async function fetchWithTimeout(url, { https = false, headers = {}, timeout = 12000 } = {}) {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
+  const t = setTimeout(() => controller.abort(new Error("timeout")), timeout);
   try {
     const r = await fetch(url, {
+      method: "GET",
       headers,
       agent: https ? httpsAgent : undefined,
-      signal: controller.signal,
+      signal: controller.signal
     });
     const text = await r.text();
     return {
@@ -59,19 +63,12 @@ async function fetchWithTimeout(url, { https = true, headers = {}, timeoutMs = 1
       status: r.status,
       statusText: r.statusText,
       headers: r.headers,
-      text,
+      text
     };
-  } finally {
-    clearTimeout(t);
-  }
+  } finally { clearTimeout(t); }
 }
 
-/**
- * Intenta descargar la primera ruta que exista.
- * - Prueba HTTPS y si no, HTTP.
- * - Usa un set de candidatos (case variants).
- * - Guarda el HTML en data/raw/<host>/<logicalName>.html si ok.
- */
+/* tries several relative paths; returns first 200 OK (saves html) */
 async function downloadFirst(host, logicalName, candidates, user, pass, progress) {
   const ping = (m) => { progress.push(m); console.log(m); };
   for (const scheme of ["https", "http"]) {
@@ -83,8 +80,8 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
           headers: {
             ...authHeader(user, pass),
             Accept: "*/*",
-            Referer: `${scheme}://${host}/dbg`,
-          },
+            Referer: `${scheme}://${host}/dbg`
+          }
         });
         if (r.ok && r.status === 200) {
           saveHtml(host, `${logicalName}.html`, r.text);
@@ -101,13 +98,13 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
   return { ok: false, error: `no encontrado (${logicalName})` };
 }
 
-/* ---------- PARSERS ---------- */
-
-// showTargets.htm
+/* ---------------- Parsers ---------------------- */
+// showTargets.htm, robusto con fallback de totales
 function parseTargets(html, vrmId) {
   const $ = cheerio.load(html);
   const out = { vrmId, targets: [], totals: {}, connections: [] };
 
+  // Tabla principal por target
   $("table").first().find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
     if (td.length >= 13) {
@@ -115,6 +112,7 @@ function parseTargets(html, vrmId) {
         vrmId,
         target: td.eq(0).text().trim(),
         connTime: td.eq(1).text().trim(),
+        // td[2..4] son columnas intermedias
         bitrate: Number(td.eq(5).text().trim() || 0),
         totalGiB: Number(td.eq(6).text().trim() || 0),
         availableGiB: Number(td.eq(7).text().trim() || 0),
@@ -122,21 +120,31 @@ function parseTargets(html, vrmId) {
         protectedGiB: Number(td.eq(9).text().trim() || 0),
         slices: Number(td.eq(10).text().trim() || 0),
         outOfRes: Number(td.eq(11).text().trim() || 0),
-        lastOutOfRes: td.eq(12).text().trim(),
+        lastOutOfRes: td.eq(12).text().trim()
       });
     }
   });
 
-  $("h1:contains('Targets')").next("table").find("tr").each((_, tr) => {
-    const k = $(tr).find("td").eq(0).text().trim();
-    const v = $(tr).find("td").eq(1).text().trim();
-    if (k) out.totals[k] = isNaN(Number(v)) ? v : Number(v);
+  // Totales “bonitos” si están en tablas bajo h1
+  $("h1:contains('Targets'), h1:contains('Blocks')").each((_, h) => {
+    const t = $(h).next("table");
+    t.find("tr").each((_, tr) => {
+      const k = $(tr).find("td").eq(0).text().trim();
+      const v = $(tr).find("td").eq(1).text().trim();
+      if (k) out.totals[k] = isNaN(Number(v)) ? v : Number(v);
+    });
   });
-  $("h1:contains('Blocks')").next("table").find("tr").each((_, tr) => {
-    const k = $(tr).find("td").eq(0).text().trim();
-    const v = $(tr).find("td").eq(1).text().trim();
-    if (k) out.totals[k] = isNaN(Number(v)) ? v : Number(v);
-  });
+
+  // Fallback de totales sumando por filas
+  if (!Object.keys(out.totals).length && out.targets.length) {
+    const sum = (k) => out.targets.reduce((a, t) => a + (Number(t[k]) || 0), 0);
+    out.totals["Total GiB"]               = sum("totalGiB");
+    out.totals["Available blocks [GiB]"]  = sum("availableGiB");
+    out.totals["Empty blocks [GiB]"]      = sum("emptyGiB");
+    out.totals["Protected blocks [GiB]"]  = sum("protectedGiB");
+  }
+
+  // Connections (si existe)
   $("h1:contains('Connections')").next("table").find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
     out.connections.push({ vrmId, target: td.eq(0).text().trim(), connections: Number(td.eq(1).text().trim() || 0) });
@@ -154,38 +162,31 @@ function parseDevices(html, vrmId) {
     if (td.length >= 18) {
       rows.push({
         vrmId,
-        device: td.eq(0).text().trim(),             // 172.20.65.85\0
+        device: td.eq(0).text().trim(),           // 172.20.65.85\0
         guid: td.eq(1).text().trim(),
         mac: td.eq(2).text().trim(),
-        fw: td.eq(3).text().trim(),                 // 09.41.0019
+        fw: td.eq(3).text().trim(),
         url: td.eq(6).text().trim(),
         connTime: td.eq(7).text().trim(),
         allocatedBlocks: Number(td.eq(8).text().trim() || 0),
         limitedSpansSince: td.eq(9).text().trim(),
         lbMode: td.eq(10).text().trim(),
         primaryTarget: td.eq(11).text().trim(),
-        maxBitrate: Number(td.eq(17).text().trim() || 0), // “Max bitrate”
+        maxBitrate: Number(td.eq(17).text().trim() || 0)
       });
     }
   });
   return rows;
 }
 
-// showCameras.htm  (robusto a nombres / idioma)
+// showCameras.htm (insensible a mayúsculas en headers y estado recording)
 function parseCameras(html, vrmId) {
   const $ = cheerio.load(html);
-
-  const norm = s => String(s || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-
   const rows = [];
-  const $tbl = $("table").first();
-  const headers = $tbl.find("tr").first().find("th").map((i, th) =>
-    norm($(th).text())
-  ).get();
+  const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
 
+  const $tbl = $("table").first();
+  const headers = $tbl.find("tr").first().find("th").map((i, th) => norm($(th).text())).get();
   const idxBy = (label) => headers.findIndex(h => h === norm(label));
 
   const iName          = idxBy("camera name");
@@ -198,61 +199,49 @@ function parseCameras(html, vrmId) {
   $tbl.find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
     if (!td.length) return;
-
     const get = (i) => (i >= 0 ? td.eq(i).text().trim() : "");
 
-    const name           = get(iName);
-    const address        = get(iAddr);
-    const recording      = get(iRec);
-    const currentBlock   = get(iCurBlock);
-    const primaryTarget  = get(iPrimaryTarget);
-    const maxBitrateCam  = Number(get(iMaxBitrate).replace(",", ".")) || null;
+    const name          = get(iName);
+    const address       = get(iAddr);             // 172.20.65.85\0\1
+    const recording     = get(iRec).toLowerCase();
+    const currentBlock  = get(iCurBlock);
+    const primaryTarget = get(iPrimaryTarget);
+    const maxBitrateCam = Number(get(iMaxBitrate).replace(",", ".")) || null;
 
     const raw = {};
     headers.forEach((h, i) => raw[h] = td.eq(i).text().trim());
 
-    rows.push({
-      vrmId,
-      name,
-      address,
-      recording,
-      currentBlock,
-      primaryTarget,
-      maxBitrateCam,
-      raw,
-    });
+    rows.push({ vrmId, name, address, recording, currentBlock, primaryTarget, maxBitrateCam, raw });
   });
+
   return rows;
 }
 
+// Join por IP base (ignora \canal y /)
 function joinCamerasDevices(camRows, devRows) {
-  const devByDevice = new Map();
-  devRows.forEach(d => devByDevice.set((d.device || "").replace(/\/+$/, ""), d));
+  const ipBase = (s) => String(s || "").split("\\")[0].split("/")[0].trim();
+  const devByIp = new Map();
+  devRows.forEach(d => devByIp.set(ipBase(d.device), d));   // device: 172.20.65.85\0
 
   return camRows.map(c => {
-    const key = (c.address || "").replace(/\/+$/, "");
-    const dev = devByDevice.get(key);
-
-    const maxBitrate = c.maxBitrateCam != null
-      ? c.maxBitrateCam
-      : (dev?.maxBitrate ?? null);
-
+    const dev = devByIp.get(ipBase(c.address));             // address: 172.20.65.85\0\1
+    const maxBitrate = c.maxBitrateCam != null ? c.maxBitrateCam : (dev?.maxBitrate ?? null);
     return {
       ...c,
-      device: key,
+      device: dev?.device || c.address,
       fw: dev?.fw || "",
       connTime: dev?.connTime || "",
       allocatedBlocks: dev?.allocatedBlocks ?? null,
       primaryTarget: c.primaryTarget || dev?.primaryTarget || "",
-      maxBitrate,
+      maxBitrate
     };
   });
 }
 
-/* ---------- API ---------- */
-
+/* ---------------- API ------------------------- */
 app.get("/api/status", (_req, res) => res.json({ ok: true, lastSnapshot: lastSnapshot.ts }));
 
+// Online /scan
 app.post("/api/scan", async (req, res) => {
   const { vrms = DEFAULT_VRMS, user = DBG_USER, pass = DBG_PASS } = req.body || {};
   if (!Array.isArray(vrms) || !vrms.length) return res.status(400).json({ error: "No VRMs" });
@@ -261,18 +250,9 @@ app.post("/api/scan", async (req, res) => {
   const ping = (m) => { progress.push(m); console.log(m); };
 
   const CANDS = {
-    cameras: [
-      "/dbg/showCameras.htm", "/dbg/showcameras.htm", "/dbg/ShowCameras.htm",
-      "/showCameras.htm", "/ShowCameras.htm"
-    ],
-    devices: [
-      "/dbg/showDevices.htm", "/dbg/showdevices.htm", "/dbg/ShowDevices.htm",
-      "/showDevices.htm", "/ShowDevices.htm"
-    ],
-    targets: [
-      "/dbg/showTargets.htm", "/dbg/showtargets.htm", "/dbg/ShowTargets.htm",
-      "/showTargets.htm", "/ShowTargets.htm"
-    ],
+    cameras: ["/dbg/showCameras.htm", "/dbg/showcameras.htm", "/dbg/ShowCameras.htm", "/showCameras.htm", "/ShowCameras.htm"],
+    devices: ["/dbg/showDevices.htm", "/dbg/showdevices.htm", "/dbg/ShowDevices.htm", "/showDevices.htm", "/ShowDevices.htm"],
+    targets: ["/dbg/showTargets.htm", "/dbg/showtargets.htm", "/dbg/ShowTargets.htm", "/showTargets.htm", "/ShowTargets.htm"]
   };
 
   try {
@@ -298,7 +278,6 @@ app.post("/api/scan", async (req, res) => {
       if (camRes.ok) try { cameras = parseCameras(camRes.html, vrmId); } catch (e) { errs.push("parseCameras:" + e.message); }
 
       const camsEnriched = joinCamerasDevices(cameras, devices);
-
       results.push({ vrm: v, vrmId, errors: errs, targets, devicesCount: devices.length, cameras: camsEnriched });
       ping(`OK ${vrmId} — cams:${camsEnriched.length} devs:${devices.length}`);
     }
@@ -306,14 +285,18 @@ app.post("/api/scan", async (req, res) => {
     const camerasAll = results.flatMap(r => r.cameras || []);
     const vrmStats = results.map(r => {
       const t = r.targets?.totals || {};
+      const total = Number(t["Total GiB"] || 0);
+      const available = Number(t["Available blocks [GiB]"] || 0);
+      const empty = Number(t["Empty blocks [GiB]"] || 0);
+      const protectedGiB = Number(t["Protected blocks [GiB]"] || 0);
       return {
         vrmId: r.vrmId,
-        totalGiB: Number(t["Total GiB"] || t["Total number of blocks"] || 0),
-        availableGiB: Number(t["Available blocks [GiB]"] || 0),
-        emptyGiB: Number(t["Empty blocks [GiB]"] || 0),
-        protectedGiB: Number(t["Protected blocks [GiB]"] || 0),
+        totalGiB: total,
+        availableGiB: available,
+        emptyGiB: empty,
+        protectedGiB,
         targets: (r.targets?.targets || []).length,
-        cameras: (r.cameras || []).length,
+        cameras: (r.cameras || []).length
       };
     });
 
@@ -325,13 +308,72 @@ app.post("/api/scan", async (req, res) => {
   }
 });
 
-/* ---------- CSV ---------- */
+// Offline /upload (adjuntar HTML)
+app.post("/api/upload/html", upload.array("files"), async (req, res) => {
+  try {
+    const label = (req.body?.label || "Importado • VRM (sin-IP)").trim();
+    const files = req.files || [];
+    const progress = [];
+    const ping = (m) => { progress.push(m); console.log(m); };
+
+    let camsHtml = null, devsHtml = null, tgtsHtml = null;
+
+    for (const f of files) {
+      const name = (f.originalname || "").toLowerCase();
+      const text = f.buffer.toString("utf8");
+      if (name.includes("showcameras")) camsHtml = text;
+      else if (name.includes("showdevices")) devsHtml = text;
+      else if (name.includes("showtargets")) tgtsHtml = text;
+    }
+
+    if (!camsHtml && !devsHtml && !tgtsHtml) {
+      return res.status(400).json({ error: "No se detectó showCameras/showDevices/showTargets en los archivos adjuntos." });
+    }
+
+    const vrmId = label;
+    const errs = [];
+    let targets = null, devices = [], cameras = [];
+
+    if (tgtsHtml) try { targets = parseTargets(tgtsHtml, vrmId); ping("✓ targets (upload)"); } catch (e) { errs.push("parseTargets:" + e.message); }
+    if (devsHtml) try { devices = parseDevices(devsHtml, vrmId); ping("✓ devices (upload)"); } catch (e) { errs.push("parseDevices:" + e.message); }
+    if (camsHtml) try { cameras = parseCameras(camsHtml, vrmId); ping("✓ cameras (upload)"); } catch (e) { errs.push("parseCameras:" + e.message); }
+
+    const camsEnriched = joinCamerasDevices(cameras, devices);
+    const results = [{ vrm: { site: "Import", name: "VRM", host: "" }, vrmId, errors: errs, targets, devicesCount: devices.length, cameras: camsEnriched }];
+
+    const camerasAll = camsEnriched;
+    const t = targets?.totals || {};
+    const total = Number(t["Total GiB"] || 0);
+    const available = Number(t["Available blocks [GiB]"] || 0);
+    const empty = Number(t["Empty blocks [GiB]"] || 0);
+    const protectedGiB = Number(t["Protected blocks [GiB]"] || 0);
+
+    const vrmStats = [{
+      vrmId,
+      totalGiB: total,
+      availableGiB: available,
+      emptyGiB: empty,
+      protectedGiB,
+      targets: (targets?.targets || []).length,
+      cameras: camerasAll.length
+    }];
+
+    lastSnapshot = { ts: Date.now(), progress, vrms: results, cameras: camerasAll, vrmStats };
+    res.json(lastSnapshot);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ---------------- CSV exports ------------------ */
 app.get("/api/export/cameras.csv", (_req, res) => {
   const cols = ["vrmId", "name", "address", "recording", "currentBlock", "fw", "connTime", "primaryTarget", "maxBitrate"];
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=cameras.csv");
   const stringifier = stringify({ header: true, columns: cols });
-  (lastSnapshot.cameras || []).forEach(c => stringifier.write(cols.map(k => c[k] ?? "")));
+  (lastSnapshot.cameras || []).forEach(c => {
+    stringifier.write(cols.map(k => (c[k] ?? c.raw?.[k] ?? "")));
+  });
   stringifier.pipe(res);
 });
 
@@ -344,4 +386,5 @@ app.get("/api/export/vrms.csv", (_req, res) => {
   stringifier.pipe(res);
 });
 
+/* ---------------- start ------------------------ */
 app.listen(PORT, () => console.log(`BVMS DBG Dashboard en http://localhost:${PORT}`));

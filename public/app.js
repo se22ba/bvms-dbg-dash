@@ -1,8 +1,8 @@
 (() => {
-  const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+  const $  = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
-  // UI refs
+  /* -------- UI refs -------- */
   const vrmTextarea = $("#vrm-list");
   const userInput   = $("#dbg-user");
   const passInput   = $("#dbg-pass");
@@ -33,28 +33,32 @@
   const recordingCanvas = $("#chart-recording");
   const storageHost     = $("#vrm-storage-charts");
   let charts = {
-    recording: null,            // doughnut global
-    storageByVrm: new Map(),    // vrmId -> Chart
+    recording: null,
+    storageByVrm: new Map(),
   };
+
+  // Upload offline
+  const inputFiles  = $("#offline-files");
+  const inputLabel  = $("#offline-label");
+  const btnAttach   = $("#btn-attach");
 
   let snapshot = { cameras: [], vrmStats: [], vrms: [], progress: [], ts: 0 };
 
-  /* ================= TABS ================= */
+  /* --------- Tabs ---------- */
   tabButtons.forEach(b => {
     b.addEventListener("click", () => {
       tabButtons.forEach(x => x.classList.remove("active"));
       tabPages.forEach(p => p.classList.add("hidden"));
       b.classList.add("active");
       $(b.getAttribute("data-target")).classList.remove("hidden");
-      // Forzar resize de charts al cambiar de tab
       setTimeout(() => {
         if (charts.recording) charts.recording.resize();
         charts.storageByVrm.forEach(ch => ch.resize());
-      }, 60);
+      }, 50);
     });
   });
 
-  /* ================= HELPERS ================= */
+  /* -------- helpers -------- */
   function parseVrmTextarea(txt) {
     return txt.split(/\n/)
       .map(l => l.trim())
@@ -69,41 +73,16 @@
   }
   function nice(s){ return (s==null ? "" : String(s)); }
   function renderProgress(lines){
-    progressBox.value = lines.join("\n");
+    progressBox.value = (lines || []).join("\n");
     progressBox.scrollTop = progressBox.scrollHeight;
   }
 
-  /* ---------- Canvas redimensionable ---------- */
-  function wrapCanvasResizable(canvas, w=340, h=220) {
-    if (canvas.parentElement?.classList.contains('resizable')) return canvas;
-    const box = document.createElement('div');
-    box.className = 'resizable';
-    box.style.width = w + 'px';
-    box.style.height = h + 'px';
-    canvas.replaceWith(box);
-    box.appendChild(canvas);
-    return canvas;
-  }
-  const resizeObserver = new ResizeObserver(entries => {
-    entries.forEach(entry => {
-      const canv = entry.target.querySelector('canvas');
-      if (!canv) return;
-      const chart = Chart.getChart(canv);
-      if (chart) chart.resize();
-    });
-  });
-  function observeResizable(container) {
-    if (container?.classList.contains('resizable')) {
-      resizeObserver.observe(container);
-    }
-  }
-
-  /* ================= RENDER OVERVIEW ================= */
+  /* ------ Overview cards ------ */
   function updateOverviewCards() {
     const cams = snapshot.cameras || [];
-    const rec = cams.filter(c => (c.recording||"").toLowerCase().startsWith("record")).length;
+    const rec = cams.filter(c => /record/i.test(c.recording || "")).length; // insensitive
     const noRec = cams.length - rec;
-    const noBlock = cams.filter(c => !c.currentBlock).length;
+    const noBlock = cams.filter(c => !c.raw || !c.raw["Current block"]).length;
 
     cardTotalCams.textContent = cams.length;
     cardRecCams.textContent   = rec;
@@ -111,20 +90,17 @@
     cardNoBlocks.textContent  = noBlock;
   }
 
+  /* ------ Recording chart ------ */
   function renderRecordingChart() {
     const cams = snapshot.cameras || [];
-    const rec = cams.filter(c => (c.recording||"").toLowerCase().startsWith("record")).length;
-    const noBlock = cams.filter(c => !c.currentBlock).length;
+    const rec = cams.filter(c => /record/i.test(c.recording || "")).length;
+    const noBlock = cams.filter(c => !c.raw || !c.raw["Current block"]).length;
     const noRec = cams.length - rec;
 
     const data = {
       labels: ["Grabando", "Sin grabar", "Sin bloque"],
       datasets: [{ data: [rec, Math.max(noRec - noBlock, 0), noBlock] }]
     };
-
-    // ensure resizable wrapper
-    wrapCanvasResizable(recordingCanvas, 340, 220);
-    observeResizable(recordingCanvas.parentElement);
 
     if (charts.recording) {
       charts.recording.data = data;
@@ -136,14 +112,18 @@
       type: "doughnut",
       data,
       options: {
+        responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { position: "bottom", labels: { color: "#c9d1d9" } },
           tooltip: { enabled: true }
-        },
-        maintainAspectRatio: false
+        }
       }
     });
   }
+
+  /* ------ Storage charts por VRM ------ */
+  function cssEscape(s) { return String(s).replace(/(["\\.#\[\]\(\)])/g, "\\$1"); }
 
   function buildOrUpdateStorageCharts() {
     const stats = snapshot.vrmStats || [];
@@ -159,7 +139,6 @@
       const protectedGiB = Number(v.protectedGiB || 0);
       const used = Math.max(0, total - (available + empty + protectedGiB));
 
-      // Card
       let card = storageHost.querySelector(`[data-vrm-id="${cssEscape(vrmId)}"]`);
       if (!card) {
         card = document.createElement("div");
@@ -170,9 +149,7 @@
             <div class="title">${vrmId}</div>
             <div class="meta">Total: ${total} GiB</div>
           </div>
-          <div class="resizable" style="width:320px;height:180px;">
-            <canvas></canvas>
-          </div>
+          <canvas height="200"></canvas>
         `;
         storageHost.appendChild(card);
       } else {
@@ -180,18 +157,11 @@
         if (meta) meta.textContent = `Total: ${total} GiB`;
       }
 
-      const cWrap = card.querySelector(".resizable");
       const canvas = card.querySelector("canvas");
-      observeResizable(cWrap);
-
       const ctx = canvas.getContext("2d");
       const dataset = {
         labels: ["Used", "Available", "Empty", "Protected"],
-        datasets: [{
-          label: "GiB",
-          data: [used, available, empty, protectedGiB],
-          borderWidth: 0
-        }]
+        datasets: [{ label: "GiB", data: [used, available, empty, protectedGiB], borderWidth: 0 }]
       };
 
       if (charts.storageByVrm.has(vrmId)) {
@@ -203,6 +173,8 @@
           type: "bar",
           data: dataset,
           options: {
+            responsive: true,
+            maintainAspectRatio: false,
             scales: {
               x: {
                 stacked: true,
@@ -217,17 +189,15 @@
             },
             plugins: {
               legend: { display: false },
-              tooltip: { enabled: true },
-              title: { display:false }
-            },
-            maintainAspectRatio: false
+              tooltip: { enabled: true }
+            }
           }
         });
         charts.storageByVrm.set(vrmId, chart);
       }
     });
 
-    // Limpieza
+    // limpia VRMs que ya no estén
     charts.storageByVrm.forEach((chart, vrmId) => {
       if (!seen.has(vrmId)) {
         chart.destroy();
@@ -238,6 +208,7 @@
     });
   }
 
+  /* ------ Overview table ------ */
   function updateOverviewTable(){
     const cams = snapshot.cameras || [];
     tblOverviewBody.innerHTML = "";
@@ -248,7 +219,7 @@
         <td>${nice(c.name)}</td>
         <td>${nice(c.address)}</td>
         <td>${nice(c.recording)}</td>
-        <td>${nice(c.currentBlock || "")}</td>
+        <td>${nice(c.currentBlock || c.raw?.["Current block"] || "")}</td>
         <td>${nice(c.fw)}</td>
         <td>${nice(c.connTime)}</td>
       `;
@@ -257,7 +228,7 @@
     applySort("tbl-overview");
   }
 
-  /* ================= RENDER VRMS/CAMS ================= */
+  /* ------ VRMs table ------ */
   function updateVrms(){
     const rows = snapshot.vrmStats || [];
     tblVrmsBody.innerHTML = "";
@@ -277,6 +248,7 @@
     applySort("tbl-vrms");
   }
 
+  /* ------ Cameras table ------ */
   function updateCamerasTable(){
     const nameQ = (filterName?.value||"").toLowerCase();
     const ipQ   = (filterIp?.value||"").toLowerCase();
@@ -288,7 +260,7 @@
 
     tblCamsBody.innerHTML = "";
     cams.forEach(c => {
-      const block = c.currentBlock || "";
+      const block = c.currentBlock || c.raw?.["Current block"] || "";
       const max   = c.maxBitrate ?? "";
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -299,7 +271,7 @@
         <td>${nice(block)}</td>
         <td>${nice(c.fw)}</td>
         <td>${nice(c.connTime)}</td>
-        <td>${nice(c.primaryTarget || "")}</td>
+        <td>${nice(c.primaryTarget || c.raw?.["Primary target"] || "")}</td>
         <td class="num" data-value="${max}">${nice(max)}</td>
       `;
       tblCamsBody.appendChild(tr);
@@ -318,7 +290,7 @@
     updateCamerasTable();
   }
 
-  /* ================= SORTING ================= */
+  /* ------ sorting ------ */
   const sortState = {};
   function isNumericText(s) {
     if (s == null) return false;
@@ -377,7 +349,7 @@
   setupSortable("tbl-vrms");
   setupSortable("tbl-cams");
 
-  /* ================= EVENTS ================= */
+  /* ------ events ------ */
   btnScan.addEventListener("click", async () => {
     progressBox.value = "";
     tsBox.textContent = "consultando…";
@@ -405,13 +377,37 @@
     }
   });
 
+  // Upload offline HTML
+  btnAttach.addEventListener("click", async () => {
+    if (!inputFiles.files || !inputFiles.files.length) {
+      alert("Adjuntá al menos un HTML (showCameras/showDevices/showTargets).");
+      return;
+    }
+    const fd = new FormData();
+    [...inputFiles.files].forEach(f => fd.append("files", f, f.name));
+    fd.append("label", inputLabel.value || "Importado • VRM (sin-IP)");
+
+    try {
+      const r = await fetch("/api/upload/html", { method: "POST", body: fd });
+      const data = await r.json();
+      if (data.error) { alert(data.error); return; }
+      snapshot = {
+        cameras: data.cameras || [],
+        vrmStats: data.vrmStats || [],
+        vrms: data.vrms || [],
+        progress: data.progress || [],
+        ts: data.ts || Date.now()
+      };
+      renderAll();
+      // limpiamos input (para poder volver a adjuntar los mismos archivos si se desea)
+      inputFiles.value = "";
+    } catch (e) {
+      alert("Error subiendo HTML: " + e.message);
+    }
+  });
+
   filterName?.addEventListener("input", updateCamerasTable);
   filterIp?.addEventListener("input", updateCamerasTable);
   btnExportCams?.addEventListener("click", () => window.open("/api/export/cameras.csv", "_blank"));
   btnExportVrms?.addEventListener("click", () => window.open("/api/export/vrms.csv", "_blank"));
-
-  /* ================= UTILS ================= */
-  function cssEscape(s) {
-    return String(s).replace(/(["\\.#\[\]\(\)])/g, "\\$1");
-  }
 })();
