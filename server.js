@@ -28,10 +28,10 @@ const DBG_PASS = process.env.DBG_PASS || "DFDgsfe01!";
 
 const httpsAgent = new HttpsAgent({ rejectUnauthorized: false });
 
-/* ---------------- last snapshot ---------------- */
+
 let lastSnapshot = { ts: 0, vrms: [], cameras: [], vrmStats: [], progress: [] };
 
-/* ---------------- FS helpers ------------------- */
+
 const RAW_DIR = path.resolve(process.cwd(), "data", "raw");
 fs.mkdirSync(RAW_DIR, { recursive: true });
 
@@ -43,7 +43,7 @@ function saveHtml(host, name, html) {
   } catch {}
 }
 
-/* ---------------- HTTP utils ------------------- */
+
 function authHeader(u, p) {
   return { Authorization: "Basic " + Buffer.from(`${u}:${p}`).toString("base64") };
 }
@@ -68,7 +68,7 @@ async function fetchWithTimeout(url, { https = false, headers = {}, timeout = 12
   } finally { clearTimeout(t); }
 }
 
-/* tries several relative paths; returns first 200 OK (saves html) */
+
 async function downloadFirst(host, logicalName, candidates, user, pass, progress) {
   const ping = (m) => { progress.push(m); console.log(m); };
   for (const scheme of ["https", "http"]) {
@@ -99,12 +99,12 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
 }
 
 /* ---------------- Parsers ---------------------- */
-// showTargets.htm, robusto con fallback de totales
+// showTargets.htm
 function parseTargets(html, vrmId) {
   const $ = cheerio.load(html);
   const out = { vrmId, targets: [], totals: {}, connections: [] };
 
-  // Tabla principal por target
+  
   $("table").first().find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
     if (td.length >= 13) {
@@ -112,7 +112,7 @@ function parseTargets(html, vrmId) {
         vrmId,
         target: td.eq(0).text().trim(),
         connTime: td.eq(1).text().trim(),
-        // td[2..4] son columnas intermedias
+        
         bitrate: Number(td.eq(5).text().trim() || 0),
         totalGiB: Number(td.eq(6).text().trim() || 0),
         availableGiB: Number(td.eq(7).text().trim() || 0),
@@ -125,7 +125,7 @@ function parseTargets(html, vrmId) {
     }
   });
 
-  // Totales “bonitos” si están en tablas bajo h1
+  
   $("h1:contains('Targets'), h1:contains('Blocks')").each((_, h) => {
     const t = $(h).next("table");
     t.find("tr").each((_, tr) => {
@@ -135,7 +135,7 @@ function parseTargets(html, vrmId) {
     });
   });
 
-  // Fallback de totales sumando por filas
+  
   if (!Object.keys(out.totals).length && out.targets.length) {
     const sum = (k) => out.targets.reduce((a, t) => a + (Number(t[k]) || 0), 0);
     out.totals["Total GiB"]               = sum("totalGiB");
@@ -144,7 +144,7 @@ function parseTargets(html, vrmId) {
     out.totals["Protected blocks [GiB]"]  = sum("protectedGiB");
   }
 
-  // Connections (si existe)
+  
   $("h1:contains('Connections')").next("table").find("tr").slice(1).each((_, tr) => {
     const td = $(tr).find("td");
     out.connections.push({ vrmId, target: td.eq(0).text().trim(), connections: Number(td.eq(1).text().trim() || 0) });
@@ -232,17 +232,7 @@ function parseCameras(html, vrmId) {
       if (normalized && !(normalized in raw)) raw[normalized] = value;
     });
 
-     rows.push({
-      vrmId,
-      name,
-      address,
-      recording: recordingText,
-      recordingNormalized: recordingNorm,
-      currentBlock,
-      primaryTarget,
-      maxBitrateCam,
-      raw
-    });
+    rows.push({ vrmId, name, address, recording, currentBlock, primaryTarget, maxBitrateCam, raw });
   });
 
   return rows;

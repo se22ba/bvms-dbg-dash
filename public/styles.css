@@ -173,14 +173,14 @@ td.num { text-align: right; }
   resize: vertical;
 }
 
-/* Sortable headers */
+
 .sortable th { cursor: pointer; user-select: none; }
 .sortable th.sort-asc::after  { content: " ▲"; font-size: 0.9em; color: #9ec1ff; }
 .sortable th.sort-desc::after { content: " ▼"; font-size: 0.9em; color: #9ec1ff; }
 
 
 
-/* responsive tweaks */
+
 @media (max-width: 1024px) {
   .overview-grid { grid-template-columns: 1fr; }
 }

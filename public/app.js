@@ -2,7 +2,7 @@
   const $  = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
-  /* -------- UI refs -------- */
+  
   const vrmTextarea = $("#vrm-list");
   const userInput   = $("#dbg-user");
   const passInput   = $("#dbg-pass");
@@ -37,14 +37,14 @@
     storageByVrm: new Map(),
   };
 const storageResizeObservers = new Map();
-  // Upload offline
+  
   const inputFiles  = $("#import-files");
   const inputLabel  = $("#import-label");
   const btnAttach   = $("#btn-import");
 
   let snapshot = { cameras: [], vrmStats: [], vrms: [], progress: [], ts: 0 };
 
-  /* --------- Tabs ---------- */
+  
   tabButtons.forEach(b => {
     b.addEventListener("click", () => {
       tabButtons.forEach(x => x.classList.remove("active"));
@@ -58,7 +58,7 @@ const storageResizeObservers = new Map();
     });
   });
 
-  /* -------- helpers -------- */
+  
   function parseVrmTextarea(txt) {
     return txt.split(/\n/)
       .map(l => l.trim())
@@ -100,10 +100,10 @@ const storageResizeObservers = new Map();
     progressBox.scrollTop = progressBox.scrollHeight;
   }
 
-  /* ------ Overview cards ------ */
+  /
   function updateOverviewCards() {
     const cams = snapshot.cameras || [];
-    const rec = cams.filter(isRecording).length; // insensitive
+    const rec = cams.filter(isRecording).length; 
     const noRec = cams.length - rec;
     const noBlock = cams.filter(c => !cameraHasBlock(c)).length;
 
@@ -113,7 +113,7 @@ const storageResizeObservers = new Map();
     cardNoBlocks.textContent  = noBlock;
   }
 
-  /* ------ Recording chart ------ */
+  
   function renderRecordingChart() {
     const cams = snapshot.cameras || [];
     const rec = cams.filter(isRecording).length;
@@ -146,7 +146,7 @@ const storageResizeObservers = new Map();
     });
   }
 
-  /* ------ Storage charts por VRM ------ */
+  
   function cssEscape(s) { return String(s).replace(/(["\\.#\[\]\(\)])/g, "\\$1"); }
 
   function buildOrUpdateStorageCharts() {
@@ -237,7 +237,7 @@ const storageResizeObservers = new Map();
       }
     });
 
-    // limpia VRMs que ya no estén
+    
     charts.storageByVrm.forEach((chart, vrmId) => {
       if (!seen.has(vrmId)) {
         chart.destroy();
@@ -253,7 +253,7 @@ const storageResizeObservers = new Map();
     });
   }
 
-  /* ------ Overview table ------ */
+  
   function updateOverviewTable(){
     const cams = snapshot.cameras || [];
     tblOverviewBody.innerHTML = "";
@@ -273,7 +273,7 @@ const storageResizeObservers = new Map();
     applySort("tbl-overview");
   }
 
-  /* ------ VRMs table ------ */
+  
   function updateVrms(){
     const rows = snapshot.vrmStats || [];
     tblVrmsBody.innerHTML = "";
@@ -293,7 +293,7 @@ const storageResizeObservers = new Map();
     applySort("tbl-vrms");
   }
 
-  /* ------ Cameras table ------ */
+  
   function updateCamerasTable(){
     const nameQ = (filterName?.value||"").toLowerCase();
     const ipQ   = (filterIp?.value||"").toLowerCase();
@@ -335,7 +335,7 @@ const storageResizeObservers = new Map();
     updateCamerasTable();
   }
 
-  /* ------ sorting ------ */
+  
   const sortState = {};
   function isNumericText(s) {
     if (s == null) return false;
@@ -394,7 +394,7 @@ const storageResizeObservers = new Map();
   setupSortable("tbl-vrms");
   setupSortable("tbl-cams");
 
-  /* ------ events ------ */
+  
   btnScan.addEventListener("click", async () => {
     progressBox.value = "";
     tsBox.textContent = "consultando…";
@@ -422,7 +422,7 @@ const storageResizeObservers = new Map();
     }
   });
 
-  // Upload offline HTML
+  
   btnAttach.addEventListener("click", async () => {
     if (!inputFiles.files || !inputFiles.files.length) {
       alert("Adjuntá al menos un HTML (showCameras/showDevices/showTargets).");
@@ -444,7 +444,7 @@ const storageResizeObservers = new Map();
         ts: data.ts || Date.now()
       };
       renderAll();
-      // limpiamos input (para poder volver a adjuntar los mismos archivos si se desea)
+      
       inputFiles.value = "";
     } catch (e) {
       alert("Error subiendo HTML: " + e.message);
