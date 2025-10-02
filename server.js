@@ -246,7 +246,7 @@ function parseCameras(html, vrmId) {
 
   return rows;
 }
-unction normalizeLabelKey(label) {
+function normalizeLabelKey(label) {
   if (!label) return "";
   return String(label)
     .normalize("NFD")
