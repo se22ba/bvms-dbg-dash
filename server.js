@@ -48,7 +48,28 @@ function saveRaw(host, name, contents) {
       fs.writeFileSync(path.join(dir, name), contents, "utf8");
   } catch {}
 }
+function sanitizePathSegment(value, fallback) {
+  const str = String(value || "").trim();
+  if (!str) return fallback;
+  const sanitized = str.replace(/[^a-z0-9._-]+/gi, "_");
+  return sanitized || fallback;
+}
 
+function saveConvertedHtml({ host, label, logicalName = "bosch-vrm", html, ext }) {
+  if (!html) return;
+  try {
+    const folder =
+      sanitizePathSegment(host, null) ||
+      sanitizePathSegment(label, null) ||
+      "uploads";
+    const baseName =
+      sanitizePathSegment(logicalName, null) ||
+      sanitizePathSegment(label, null) ||
+      "bosch-vrm";
+    const extension = ext && ext.startsWith(".") ? ext : `.${ext || "html"}`;
+    saveRaw(folder, `${baseName}${extension}`, html);
+  } catch {}
+}
 
 function authHeader(u, p) {
   return { Authorization: "Basic " + Buffer.from(`${u}:${p}`).toString("base64") };
@@ -570,7 +591,7 @@ app.post("/api/scan", async (req, res) => {
         progress,
         parseDashboard: (html) => parseBoschDashboard(html, vrmId),
         onConverted: ({ html, ext }) => {
-          saveRaw(v.host, `bosch-vrm${ext}`, html);
+          saveConvertedHtml({ host: v.host, logicalName: "bosch-vrm", html, ext });
           ping(`✓ ${v.host} bosch-vrm convertido a ${ext}`);
         }
       });
@@ -675,7 +696,11 @@ app.post("/api/upload/html", upload.array("files"), async (req, res) => {
       const dashParsed = parseDashboardUpload({
         fileName: dashFileName || "bosch-vrm.mhtml",
         content: dashHtml,
-        parseDashboard: (html) => parseBoschDashboard(html, vrmId)
+       parseDashboard: (html) => parseBoschDashboard(html, vrmId),
+        onConverted: ({ html, ext }) => {
+          saveConvertedHtml({ label: vrmId, logicalName: "bosch-vrm", html, ext });
+          ping(`✓ Bosch VRM convertido a ${ext} (upload)`);
+        }
       });
       if (dashParsed.parseError) {
         errs.push("parseBoschDashboard:" + dashParsed.parseError.message);
