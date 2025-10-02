@@ -1,77 +1,142 @@
- <nav class="tab-bar">
-      <button class="tab-btn active" data-target="#tab-overview">Overview</button>
-      <button class="tab-btn" data-target="#tab-vrms">VRMs</button>
-      <button class="tab-btn" data-target="#tab-cams">Cámaras</button>
-    </nav>
-
-    <!-- ===== OVERVIEW ===== -->
-    <section id="tab-overview" class="tab-page">
-      <div class="cards-row">
-        <div class="card"><h2>Canales totales</h2><p id="card-total-channels">—</p></div>
-        <div class="card ok"><h2>Grabaciones activas</h2><p id="card-active-recordings">—</p></div>
-        <div class="card warn"><h2>Fuera de línea</h2><p id="card-offline-channels">—</p></div>
-        <div class="card err"><h2>Pérdida de señal</h2><p id="card-signal-loss">—</p></div>
-        <div class="card warn"><h2>Problemas VMS</h2><p id="card-vms-issues">—</p></div>
-        <div class="card err"><h2>Problemas ajenos</h2><p id="card-external-issues">—</p></div>
-      </div>
-
-      <div class="overview-grid">
-        <section id="overview-devices" class="panel panel-wide">
-          <div class="panel-head">
-            <h3>Dispositivos por VRM</h3>
-            <span class="panel-source">Bosch VRM</span>
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <title>BVMS Debug Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="scan-panel">
+        <div class="scan-header">
+          <h1>BVMS Debug Dashboard</h1>
+          <div class="scan-meta">
+            Última actualización: <span id="ts">—</span>
           </div>
-          <div id="vrm-device-grid" class="vrm-card-grid"></div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <h3>Estado de cámaras</h3>
-            <span class="panel-source">showCameras</span>
+        </div>
+        <div class="scan-controls">
+          <div class="scan-field">
+            <label for="vrm-list">VRMs (site • nombre • IP)</label>
+            <textarea id="vrm-list" placeholder="Ej.: Sucursal Centro • VRM Principal • 172.16.1.20"></textarea>
           </div>
-          <div class="chart-box tall">
-            <canvas id="chart-recording"></canvas>
+          <div class="scan-credentials">
+            <label for="dbg-user">Usuario</label>
+            <input id="dbg-user" placeholder="srvadmin">
+            <label for="dbg-pass">Contraseña</label>
+            <input id="dbg-pass" type="password" placeholder="••••••">
           </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <h3>Compensación de carga</h3>
-            <span class="panel-source">Bosch VRM</span>
+          <div class="scan-actions">
+            <button id="btn-scan" type="button">Escanear online</button>
+            <div class="import-controls">
+              <input id="import-files" type="file" multiple>
+              <label id="import-label" for="import-files">Sin archivos seleccionados</label>
+              <button id="btn-import" type="button">Importar HTML</button>
+            </div>
           </div>
-          <div id="vrm-load-grid" class="load-card-grid"></div>
-        </section>
+        </div>
+        <div class="scan-progress">
+          <label for="progress">Progreso</label>
+          <textarea id="progress" readonly></textarea>
+        </div>
+      </header>
 
-        <section class="panel panel-wide">
-          <div class="panel-head">
-            <h3>Almacenamiento</h3>
-            <span class="panel-source">Bosch VRM</span>
-          </div>
-          <div id="vrm-storage-charts" class="storage-grid"></div>
-        </section>
-      </div>
-    </section>
+      <nav class="tab-bar">
+        <button class="tab-btn active" data-target="#tab-overview">Overview</button>
+        <button class="tab-btn" data-target="#tab-vrms">VRMs</button>
+        <button class="tab-btn" data-target="#tab-cams">Cámaras</button>
+      </nav>
 
-    <!-- ===== VRMs ===== -->
-    <section id="tab-vrms" class="tab-page hidden">
-      <div class="toolbar">
-        <button id="btn-exp-vrms">Exportar CSV VRMs</button>
-      </div>
-      <table id="tbl-vrms">
-        <thead>
-          <tr>
-            <th>VRM</th><th>Targets</th><th>Cámaras</th>
-            <th>Total GiB</th><th>Disponibles</th><th>Vacíos</th><th>Protegidos</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
+      <!-- ===== OVERVIEW ===== -->
+      <section id="tab-overview" class="tab-page">
+        <div class="cards-row">
+          <div class="card"><h2>Canales totales</h2><p id="card-total-channels">—</p></div>
+          <div class="card ok"><h2>Grabaciones activas</h2><p id="card-active-recordings">—</p></div>
+          <div class="card warn"><h2>Fuera de línea</h2><p id="card-offline-channels">—</p></div>
+          <div class="card err"><h2>Pérdida de señal</h2><p id="card-signal-loss">—</p></div>
+          <div class="card warn"><h2>Problemas VMS</h2><p id="card-vms-issues">—</p></div>
+          <div class="card err"><h2>Problemas ajenos</h2><p id="card-external-issues">—</p></div>
+        </div>
 
-    <!-- ===== CÁMARAS ===== -->
-    <section id="tab-cams" class="tab-page hidden">
-      <div class="toolbar">
-        Filtro nombre: <input id="filter-name" placeholder="Nombre…">
-        Filtro IP: <input id="filter-ip" placeholder="IP/canal…">
-        <button id="btn-exp-cams">Exportar CSV Cámaras</button>
-      </div>
+        <div class="overview-grid">
+          <section id="overview-devices" class="panel panel-wide">
+            <div class="panel-head">
+              <h3>Dispositivos por VRM</h3>
+              <span class="panel-source">Bosch VRM</span>
+            </div>
+            <div id="vrm-device-grid" class="vrm-card-grid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Estado de cámaras</h3>
+              <span class="panel-source">showCameras</span>
+            </div>
+            <div class="chart-box tall">
+              <canvas id="chart-recording"></canvas>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Compensación de carga</h3>
+              <span class="panel-source">Bosch VRM</span>
+            </div>
+            <div id="vrm-load-grid" class="load-card-grid"></div>
+          </section>
+
+          <section class="panel panel-wide">
+            <div class="panel-head">
+              <h3>Almacenamiento</h3>
+              <span class="panel-source">Bosch VRM</span>
+            </div>
+            <div id="vrm-storage-charts" class="storage-grid"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ===== VRMs ===== -->
+      <section id="tab-vrms" class="tab-page hidden">
+        <div class="toolbar">
+          <button id="btn-exp-vrms" type="button">Exportar CSV VRMs</button>
+        </div>
+        <table id="tbl-vrms">
+          <thead>
+            <tr>
+              <th>VRM</th><th>Targets</th><th>Cámaras</th>
+              <th>Total GiB</th><th>Disponibles</th><th>Vacíos</th><th>Protegidos</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <!-- ===== CÁMARAS ===== -->
+      <section id="tab-cams" class="tab-page hidden">
+        <div class="toolbar">
+          Filtro nombre: <input id="filter-name" placeholder="Nombre…">
+          Filtro IP: <input id="filter-ip" placeholder="IP/canal…">
+          <button id="btn-exp-cams" type="button">Exportar CSV Cámaras</button>
+        </div>
+        <table id="tbl-cams">
+          <thead>
+            <tr>
+              <th>VRM</th>
+              <th>Cámara</th>
+              <th>IP</th>
+              <th>Grabación</th>
+              <th>Bloque actual</th>
+              <th>Firmware</th>
+              <th>Conexión</th>
+              <th>Target primario</th>
+              <th>Máx bitrate</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

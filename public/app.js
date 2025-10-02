@@ -64,6 +64,15 @@
     dashboards: []
   };
 
+   function updateExportButtons() {
+    const hasCameras = Array.isArray(snapshot?.cameras) && snapshot.cameras.length > 0;
+    const hasVrms = Array.isArray(snapshot?.vrms) && snapshot.vrms.length > 0;
+    if (btnExportCams) btnExportCams.disabled = !hasCameras;
+    if (btnExportVrms) btnExportVrms.disabled = !hasVrms;
+  }
+
+  updateExportButtons();
+
   /* ================= TABS ================= */
   tabButtons.forEach(b => {
     b.addEventListener("click", () => {
@@ -716,6 +725,7 @@
     renderLoadCards();
     updateVrms();
     updateCamerasTable();
+    updateExportButtons();
   }
 
   function renderProgress(lines){
@@ -783,6 +793,19 @@
   setupSortable("tbl-cams");
 
   /* ================= EVENTOS ================= */
+  function applySnapshotData(data) {
+    snapshot = {
+      cameras: data && data.cameras ? data.cameras : [],
+      vrmStats: data && data.vrmStats ? data.vrmStats : [],
+      vrms: data && data.vrms ? data.vrms : [],
+      progress: data && data.progress ? data.progress : [],
+      ts: data && data.ts ? data.ts : Date.now(),
+      overviewTotals: data && data.overviewTotals ? data.overviewTotals : {},
+      cameraStatus: data && data.cameraStatus ? data.cameraStatus : {},
+      dashboards: data && data.dashboards ? data.dashboards : []
+    };
+    renderAll();
+  }
   btnScan.addEventListener("click", async () => {
     progressBox.value = "";
     tsBox.textContent = "consultando…";
@@ -796,21 +819,88 @@
         headers: { "Content-Type":"application/json" },
         body: JSON.stringify(payload)
       });
-      const data = await r.json();
-      snapshot = {
-        cameras: data.cameras || [],
-        vrmStats: data.vrmStats || [],
-        vrms: data.vrms || [],
-        progress: data.progress || [],
-        ts: data.ts || Date.now(),
-        overviewTotals: data.overviewTotals || {},
-        cameraStatus: data.cameraStatus || {},
-        dashboards: data.dashboards || []
-      };
-      renderAll();
+          let data;
+      try { data = await r.json(); }
+      catch { data = {}; }
+      if (!r.ok) {
+        renderProgress(data && data.progress ? data.progress : []);
+        const msg = data && data.error ? data.error : `Error ${r.status}`;
+        throw new Error(msg);
+      }
+      applySnapshotData(data);
     } catch (e) {
-      progressBox.value += `\n❌ ${e.message}`;
+      const message = e && e.message ? e.message : String(e);
+      progressBox.value += `\n❌ ${message}`;
     }
   });
+
+if (btnExportCams) {
+    btnExportCams.addEventListener("click", () => {
+      if (btnExportCams.disabled) return;
+      window.open("/api/export/cameras.csv", "_blank");
+    });
+  }
+
+  if (btnExportVrms) {
+    btnExportVrms.addEventListener("click", () => {
+      if (btnExportVrms.disabled) return;
+      window.open("/api/export/vrms.csv", "_blank");
+    });
+  }
+
+if (inputFiles && inputLabel) {
+    inputFiles.addEventListener("change", () => {
+      const files = inputFiles.files || [];
+      if (!files.length) {
+        inputLabel.textContent = "Sin archivos seleccionados";
+      } else if (files.length === 1) {
+        inputLabel.textContent = files[0].name;
+      } else {
+        inputLabel.textContent = `${files.length} archivos seleccionados`;
+      }
+    });
+  }
+
+  if (btnAttach && inputFiles && inputLabel) {
+    btnAttach.addEventListener("click", async () => {
+      const files = inputFiles.files || [];
+      if (!files.length) {
+        alert("Seleccioná al menos un archivo HTML exportado");
+        return;
+      }
+
+      progressBox.value = "";
+      tsBox.textContent = "importando…";
+      inputLabel.textContent = "Importando…";
+
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+      }
+
+      try {
+        const r = await fetch("/api/upload/html", {
+          method: "POST",
+          body: formData
+        });
+        let data;
+        try { data = await r.json(); }
+        catch { data = {}; }
+        if (!r.ok) {
+          renderProgress(data && data.progress ? data.progress : []);
+          const msg = data && data.error ? data.error : `Error ${r.status}`;
+          throw new Error(msg);
+        }
+        applySnapshotData(data);
+        const vrmLabel = data && data.vrms && data.vrms[0] && data.vrms[0].vrmId;
+        inputLabel.textContent = vrmLabel ? `Importado: ${vrmLabel}` : "Importación completada";
+        inputFiles.value = "";
+      } catch (e) {
+        const message = e && e.message ? e.message : String(e);
+        progressBox.value += `\n❌ ${message}`;
+        inputLabel.textContent = `Error: ${message}`;
+      }
+    });
+  }
 
 })();
