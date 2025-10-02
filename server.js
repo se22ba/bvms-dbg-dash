@@ -34,14 +34,32 @@ let lastSnapshot = { ts: 0, vrms: [], cameras: [], vrmStats: [], progress: [], d
 const RAW_DIR = path.resolve(process.cwd(), "data", "raw");
 fs.mkdirSync(RAW_DIR, { recursive: true });
 
-function saveHtml(host, name, html) {
+function saveRaw(host, name, contents) {
   try {
     const dir = path.join(RAW_DIR, host);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, name), html, "utf8");
+     fs.writeFileSync(path.join(dir, name), contents, "utf8");
   } catch {}
 }
 
+function detectExtension(rel, contentType) {
+  const relPath = String(rel || "").split("?")[0].split("#")[0];
+  let ext = path.extname(relPath);
+  if (ext) return ext.toLowerCase();
+
+  const type = String(contentType || "").toLowerCase();
+  if (!type) return ".html";
+
+  if (type.includes("multipart/related") || type.includes("application/x-mimearchive")) {
+    return ".mhtml";
+  }
+
+  if (type.includes("text/html") || type.includes("application/xhtml+xml")) {
+    return ".html";
+  }
+
+  return ".html";
+}
 
 function authHeader(u, p) {
   return { Authorization: "Basic " + Buffer.from(`${u}:${p}`).toString("base64") };
@@ -83,9 +101,11 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
           }
         });
         if (r.ok && r.status === 200) {
-          saveHtml(host, `${logicalName}.html`, r.text);
+          const contentType = r.headers.get("content-type");
+          const ext = detectExtension(rel, contentType);
+          saveRaw(host, `${logicalName}${ext}`, r.text);
           ping(`✓ ${host} ${logicalName} ← ${rel} (${scheme.toUpperCase()})`);
-          return { ok: true, scheme, rel, html: r.text };
+          return { ok: true, scheme, rel, ext, html: r.text };
         } else {
           ping(`· ${host} ${logicalName} ${r.status} ${r.statusText} ← ${rel} (${scheme})`);
         }
