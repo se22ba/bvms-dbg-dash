@@ -64,6 +64,24 @@
     dashboards: []
   };
 
+  const chartWarningMessage = "⚠️ Chart.js no está disponible; se omiten gráficos.";
+  let chartJsMissingLogged = false;
+  function ensureChartJsAvailable() {
+    if (typeof window !== "undefined" && window.Chart) return true;
+    const hasMessage = Array.isArray(snapshot.progress) && snapshot.progress.includes(chartWarningMessage);
+    if (!hasMessage) {
+      const lines = Array.isArray(snapshot.progress)
+        ? [...snapshot.progress, chartWarningMessage]
+        : [chartWarningMessage];
+      snapshot.progress = lines;
+    }
+    if (!chartJsMissingLogged || !hasMessage) {
+      chartJsMissingLogged = true;
+      renderProgress(snapshot.progress);
+    }
+    return false;
+  }
+
    function updateExportButtons() {
     const hasCameras = Array.isArray(snapshot?.cameras) && snapshot.cameras.length > 0;
     const hasVrms = Array.isArray(snapshot?.vrms) && snapshot.vrms.length > 0;
@@ -226,6 +244,7 @@
   }
 
   function renderCameraStatusChart() {
+    if (!recordingCanvas) return;
     const status  = getCameraStatusSummary();
     const base    = [status.recording || 0, status.recordingDisabled || 0, status.pending || 0, status.offline || 0];
     const labels  = ["Grabando", "Recording disabled", "Pending", "Offline"];
@@ -237,6 +256,14 @@
     if (other > 0) colors.push(COLORS.other);
 
     const data = { labels, datasets: [{ data: base, backgroundColor: colors, borderWidth: 0 }] };
+
+    if (!ensureChartJsAvailable()) {
+      if (charts.cameraStatus) {
+        charts.cameraStatus.destroy();
+        charts.cameraStatus = null;
+      }
+      return;
+    }
 
     if (charts.cameraStatus) {
       charts.cameraStatus.data.labels = data.labels;
@@ -317,29 +344,37 @@
       let chart      = charts.storageByVrm.get(vrmId);
 
       if (chartEntries.length && canvas) {
-        if (!chart) {
-          chart = new Chart(canvas.getContext("2d"), {
-            type: "bar",
-            data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 6, borderSkipped: false }] },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              indexAxis: "y",
-              scales: {
-                x: { ticks: { color: "#c9d1d9" }, grid: { color: "rgba(255,255,255,0.06)" } },
-                y: { ticks: { color: "#c9d1d9" }, grid: { display: false } }
-              },
-              plugins: { legend: { display: false }, tooltip: { enabled: true } }
-            }
-          });
-          charts.storageByVrm.set(vrmId, chart);
+        if (!ensureChartJsAvailable()) {
+          if (chart) {
+            chart.destroy();
+            charts.storageByVrm.delete(vrmId);
+          }
+          if (chartBox) chartBox.style.display = "none";
         } else {
-          chart.data.labels = labels;
-          chart.data.datasets[0].data = data;
-          chart.data.datasets[0].backgroundColor = colors;
-          chart.update();
+          if (!chart) {
+            chart = new Chart(canvas.getContext("2d"), {
+              type: "bar",
+              data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 6, borderSkipped: false }] },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: "y",
+                scales: {
+                  x: { ticks: { color: "#c9d1d9" }, grid: { color: "rgba(255,255,255,0.06)" } },
+                  y: { ticks: { color: "#c9d1d9" }, grid: { display: false } }
+                },
+                plugins: { legend: { display: false }, tooltip: { enabled: true } }
+              }
+            });
+            charts.storageByVrm.set(vrmId, chart);
+          } else {
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = data;
+            chart.data.datasets[0].backgroundColor = colors;
+            chart.update();
+          }
+          if (chartBox) chartBox.style.display = "";
         }
-        if (chartBox) chartBox.style.display = "";
       } else {
         if (chart) {
           chart.destroy();
@@ -501,7 +536,12 @@
       let chart = charts.devicesByVrm.get(vrmId);
       const canvas = card.querySelector("canvas");
       if (canvas) {
-        if (!chart) {
+        if (!ensureChartJsAvailable()) {
+          if (chart) {
+            chart.destroy();
+            charts.devicesByVrm.delete(vrmId);
+          }
+        } else if (!chart) {
           chart = new Chart(canvas.getContext("2d"), {
             type: "doughnut",
             data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] },
@@ -594,29 +634,37 @@
       let chart      = charts.loadByVrm.get(vrmId);
 
       if (chartEntries.length && canvas) {
-        if (!chart) {
-          chart = new Chart(canvas.getContext("2d"), {
-            type: "bar",
-            data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 6, borderSkipped: false }] },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              indexAxis: "y",
-              scales: {
-                x: { ticks: { color: "#c9d1d9" }, grid: { color: "rgba(255,255,255,0.06)" } },
-                y: { ticks: { color: "#c9d1d9" }, grid: { display: false } }
-              },
-              plugins: { legend: { display: false }, tooltip: { enabled: true } }
-            }
-          });
-          charts.loadByVrm.set(vrmId, chart);
+        if (!ensureChartJsAvailable()) {
+          if (chart) {
+            chart.destroy();
+            charts.loadByVrm.delete(vrmId);
+          }
+          if (chartBox) chartBox.style.display = "none";
         } else {
-          chart.data.labels = labels;
-          chart.data.datasets[0].data = data;
-          chart.data.datasets[0].backgroundColor = colors;
-          chart.update();
+          if (!chart) {
+            chart = new Chart(canvas.getContext("2d"), {
+              type: "bar",
+              data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 6, borderSkipped: false }] },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: "y",
+                scales: {
+                  x: { ticks: { color: "#c9d1d9" }, grid: { color: "rgba(255,255,255,0.06)" } },
+                  y: { ticks: { color: "#c9d1d9" }, grid: { display: false } }
+                },
+                plugins: { legend: { display: false }, tooltip: { enabled: true } }
+              }
+            });
+            charts.loadByVrm.set(vrmId, chart);
+          } else {
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = data;
+            chart.data.datasets[0].backgroundColor = colors;
+            chart.update();
+          }
+          if (chartBox) chartBox.style.display = "";
         }
-        if (chartBox) chartBox.style.display = "";
       } else {
         if (chart) { chart.destroy(); charts.loadByVrm.delete(vrmId); }
         if (chartBox) chartBox.style.display = "none";
