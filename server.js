@@ -8,6 +8,13 @@ import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
+import {
+  detectExtension,
+  extractPrimaryHtml,
+  fetchAndParseDashboard,
+  parseDashboardUpload
+} from "./lib/fetchAndParseDashboard.js";
+
 
 dotenv.config();
 
@@ -42,123 +49,6 @@ function saveRaw(host, name, contents) {
   } catch {}
 }
 
-function detectExtension(rel, contentType, raw) {
-  const relPath = String(rel || "").split("?")[0].split("#")[0];
-  let ext = path.extname(relPath);
-  if (ext) {
-    ext = ext.toLowerCase();
-    if (ext === ".mht") return ".mhtml";
-    return ext;
-  }
-
-  const type = String(contentType || "").toLowerCase();
-
-  if (type.includes("multipart/related") || type.includes("application/x-mimearchive")) {
-    return ".mhtml";
-  }
-
-  if (type.includes("text/html") || type.includes("application/xhtml+xml")) {
-    return ".html";
-  }
-
-  const body = typeof raw === "string" ? raw.slice(0, 4096).toLowerCase() : "";
-  if (body.includes("content-type: multipart/related") || body.includes("mime-version: 1.0") && body.includes("boundary=")) {
-    return ".mhtml";
-  }
-
-  return ".html";
-}
-
-function decodeQuotedPrintable(str) {
-  return str
-    .replace(/=\r?\n/g, "")
-    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-}
-
-function decodeMimeText(body, transferEncoding, charset) {
-  const encoding = String(transferEncoding || "").toLowerCase();
-  let buffer;
-
-  if (encoding.includes("base64")) {
-    const clean = body.replace(/\s+/g, "");
-    buffer = Buffer.from(clean, "base64");
-  } else if (encoding.includes("quoted-printable")) {
-    const decoded = decodeQuotedPrintable(body);
-    buffer = Buffer.from(decoded, "binary");
-  } else {
-    buffer = Buffer.from(body, "binary");
-  }
-
-  const cs = String(charset || "utf-8").toLowerCase();
-  try {
-    if (cs === "utf-8" || cs === "utf8") return buffer.toString("utf8");
-    if (cs === "iso-8859-1" || cs === "latin1" || cs === "latin-1" || cs === "windows-1252") {
-      return buffer.toString("latin1");
-    }
-    if (cs === "us-ascii" || cs === "ascii") return buffer.toString("ascii");
-    return buffer.toString("utf8");
-  } catch {
-    return buffer.toString("utf8");
-  }
-}
-
-function extractPrimaryHtml(raw, { contentType, ext } = {}) {
-  const type = String(contentType || "").toLowerCase();
-  const extension = String(ext || "").toLowerCase();
-  const looksLikeMhtml =
-    extension === ".mhtml" ||
-    extension === ".mht" ||
-    type.includes("multipart/related") ||
-    raw.includes("Content-Type: multipart/related");
-
-  if (!looksLikeMhtml) return raw;
-
-  const boundaryMatch = /boundary="?([^";]+)"?/i.exec(contentType || "");
-  const boundary = boundaryMatch?.[1] || (() => {
-    const m = raw.match(/\r?\n--([^\r\n]+)\r?\ncontent-type:/i);
-    return m?.[1];
-  })();
-
-  if (!boundary) return raw;
-
-  const delimiter = `--${boundary}`;
-  const sections = raw.split(delimiter);
-  for (const section of sections) {
-    let part = section.trim();
-    if (!part || part === "--") continue;
-    if (part.startsWith("--")) part = part.slice(2).trim();
-
-    const splitIndex = part.search(/\r?\n\r?\n/);
-    if (splitIndex === -1) continue;
-
-    const headerBlock = part.slice(0, splitIndex).trim();
-    const body = part.slice(splitIndex).replace(/^\r?\n\r?\n/, "");
-
-    const headerLines = headerBlock.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    const headers = {};
-    headerLines.forEach(line => {
-      const idx = line.indexOf(":");
-      if (idx === -1) return;
-      const key = line.slice(0, idx).trim().toLowerCase();
-      const value = line.slice(idx + 1).trim();
-      headers[key] = value;
-    });
-
-    const partType = String(headers["content-type"] || "").toLowerCase();
-    if (!partType.includes("text/html")) continue;
-
-    const charsetMatch = headers["content-type"]?.match(/charset="?([^";]+)"?/i);
-    const charset = charsetMatch?.[1];
-    const transfer = headers["content-transfer-encoding"];
-
-    try {
-      const html = decodeMimeText(body, transfer, charset);
-      if (html.trim()) return html;
-    } catch {}
-  }
-
-  return raw;
-}
 
 function authHeader(u, p) {
   return { Authorization: "Basic " + Buffer.from(`${u}:${p}`).toString("base64") };
@@ -206,7 +96,7 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
           saveRaw(host, `${logicalName}${ext}`, raw);
           const html = extractPrimaryHtml(raw, { contentType, ext });
           ping(`✓ ${host} ${logicalName} ← ${rel} (${scheme.toUpperCase()})`);
-           return { ok: true, scheme, rel, ext, html };
+            return { ok: true, scheme, rel, ext, html, contentType, raw };
         } else {
           ping(`· ${host} ${logicalName} ${r.status} ${r.statusText} ← ${rel} (${scheme})`);
         }
@@ -670,20 +560,39 @@ app.post("/api/scan", async (req, res) => {
       const camRes = await downloadFirst(v.host, "showCameras", CANDS.cameras, user, pass, progress);
       const devRes = await downloadFirst(v.host, "showDevices", CANDS.devices, user, pass, progress);
       const tgtRes = await downloadFirst(v.host, "showTargets", CANDS.targets, user, pass, progress);
-      const dashRes = await downloadFirst(v.host, "bosch-vrm", CANDS.dashboard, user, pass, progress);
+      const dashRes = await fetchAndParseDashboard({
+        downloader: ({ host, logicalName, candidates, user, pass, progress }) =>
+          downloadFirst(host, logicalName, candidates, user, pass, progress),
+        host: v.host,
+        candidates: CANDS.dashboard,
+        user,
+        pass,
+        progress,
+        parseDashboard: (html) => parseBoschDashboard(html, vrmId),
+        onConverted: ({ html, ext }) => {
+          saveRaw(v.host, `bosch-vrm${ext}`, html);
+          ping(`✓ ${v.host} bosch-vrm convertido a ${ext}`);
+        }
+      });
 
       const errs = [];
       if (!tgtRes.ok) errs.push(`targets: ${tgtRes.error || "no 200"}`);
       if (!devRes.ok) errs.push(`devices: ${devRes.error || "no 200"}`);
       if (!camRes.ok) errs.push(`cameras: ${camRes.error || "no 200"}`);
-       if (!dashRes.ok) errs.push(`bosch-vrm: ${dashRes.error || "no 200"}`);
+      if (!dashRes.ok) errs.push(`bosch-vrm: ${dashRes.error || "no 200"}`);
       if (errs.length) ping(`⚠ ${vrmId} -> ${errs.join(" | ")}`);
 
        let targets = null, devices = [], cameras = [], dashboard = null;
       if (tgtRes.ok) try { targets = parseTargets(tgtRes.html, vrmId); } catch (e) { errs.push("parseTargets:" + e.message); }
       if (devRes.ok) try { devices = parseDevices(devRes.html, vrmId); } catch (e) { errs.push("parseDevices:" + e.message); }
       if (camRes.ok) try { cameras = parseCameras(camRes.html, vrmId); } catch (e) { errs.push("parseCameras:" + e.message); }
-      if (dashRes.ok) try { dashboard = parseBoschDashboard(dashRes.html, vrmId); } catch (e) { errs.push("parseBoschDashboard:" + e.message); }
+      if (dashRes.ok) {
+        if (dashRes.parseError) {
+          errs.push("parseBoschDashboard:" + dashRes.parseError.message);
+        } else {
+          dashboard = dashRes.dashboard;
+        }
+      }
 
       const camsEnriched = joinCamerasDevices(cameras, devices);
       results.push({ vrm: v, vrmId, errors: errs, targets, devicesCount: devices.length, cameras: camsEnriched, dashboard });
@@ -737,7 +646,7 @@ app.post("/api/upload/html", upload.array("files"), async (req, res) => {
     const progress = [];
     const ping = (m) => { progress.push(m); console.log(m); };
 
-    let camsHtml = null, devsHtml = null, tgtsHtml = null, dashHtml = null, dashExt = null;
+    let camsHtml = null, devsHtml = null, tgtsHtml = null, dashHtml = null, dashFileName = null;
 
     for (const f of files) {
       const name = (f.originalname || "").toLowerCase();
@@ -747,7 +656,7 @@ app.post("/api/upload/html", upload.array("files"), async (req, res) => {
       else if (name.includes("showtargets")) tgtsHtml = text;
        else if (name.includes("bosch") && name.includes("vrm")) {
         dashHtml = text;
-        dashExt = detectExtension(f.originalname, null);
+        dashFileName = f.originalname;
       }
     }
 
@@ -763,10 +672,21 @@ app.post("/api/upload/html", upload.array("files"), async (req, res) => {
     if (devsHtml) try { devices = parseDevices(devsHtml, vrmId); ping("✓ devices (upload)"); } catch (e) { errs.push("parseDevices:" + e.message); }
     if (camsHtml) try { cameras = parseCameras(camsHtml, vrmId); ping("✓ cameras (upload)"); } catch (e) { errs.push("parseCameras:" + e.message); }
      if (dashHtml) {
-      const html = extractPrimaryHtml(dashHtml, { ext: dashExt });
-      try { dashboard = parseBoschDashboard(html, vrmId); ping("✓ Bosch VRM (upload)"); } catch (e) { errs.push("parseBoschDashboard:" + e.message); }
+      const dashParsed = parseDashboardUpload({
+        fileName: dashFileName || "bosch-vrm.mhtml",
+        content: dashHtml,
+        parseDashboard: (html) => parseBoschDashboard(html, vrmId)
+      });
+      if (dashParsed.parseError) {
+        errs.push("parseBoschDashboard:" + dashParsed.parseError.message);
+      } else {
+        dashboard = dashParsed.dashboard;
+        ping("✓ Bosch VRM (upload)");
+        if (dashParsed.convertedFromMhtml) {
+          ping(`✓ Bosch VRM convertido a ${dashParsed.ext} (upload)`);
+        }
+      }
     }
-
     const camsEnriched = joinCamerasDevices(cameras, devices);
     const results = [{ vrm: { site: "Import", name: "VRM", host: "" }, vrmId, errors: errs, targets, devicesCount: devices.length, cameras: camsEnriched, dashboard }];
 
