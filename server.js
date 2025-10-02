@@ -42,7 +42,7 @@ function saveRaw(host, name, contents) {
   } catch {}
 }
 
-function detectExtension(rel, contentType) {
+function detectExtension(rel, contentType, raw) {
   const relPath = String(rel || "").split("?")[0].split("#")[0];
   let ext = path.extname(relPath);
   if (ext) {
@@ -52,7 +52,6 @@ function detectExtension(rel, contentType) {
   }
 
   const type = String(contentType || "").toLowerCase();
-  if (!type) return ".html";
 
   if (type.includes("multipart/related") || type.includes("application/x-mimearchive")) {
     return ".mhtml";
@@ -60,6 +59,11 @@ function detectExtension(rel, contentType) {
 
   if (type.includes("text/html") || type.includes("application/xhtml+xml")) {
     return ".html";
+  }
+
+  const body = typeof raw === "string" ? raw.slice(0, 4096).toLowerCase() : "";
+  if (body.includes("content-type: multipart/related") || body.includes("mime-version: 1.0") && body.includes("boundary=")) {
+    return ".mhtml";
   }
 
   return ".html";
@@ -197,8 +201,8 @@ async function downloadFirst(host, logicalName, candidates, user, pass, progress
         });
         if (r.ok && r.status === 200) {
           const contentType = r.headers.get("content-type");
-          const ext = detectExtension(rel, contentType);
           const raw = r.text;
+          const ext = detectExtension(rel, contentType, raw);
           saveRaw(host, `${logicalName}${ext}`, raw);
           const html = extractPrimaryHtml(raw, { contentType, ext });
           ping(`✓ ${host} ${logicalName} ← ${rel} (${scheme.toUpperCase()})`);
@@ -416,7 +420,16 @@ function extractKeyValueEntries(nodes, start, end) {
 
     // Skip if matches other headings exactly to avoid bleeding.
     const normalized = normalizeLabelKey(text);
-    if (["dispositivos", "almacenamiento", "compensacion de carga"].includes(normalized)) {
+    if ([
+      "dispositivos",
+      "devices",
+      "almacenamiento",
+      "storage",
+      "compensacion de carga",
+      "load balancing",
+      "load balance",
+      "loadbalancing"
+    ].includes(normalized)) {
       if (pendingLabel) {
         pushEntry(pendingLabel, "");
         pendingLabel = null;
@@ -463,25 +476,34 @@ const DEVICE_METRIC_ALIASES = {
     "total canales",
     "numero de dispositivos",
     "número de dispositivos",
-    "total de dispositivos"
+    "total de dispositivos",
+    "total channels",
+    "number of devices",
+    "total devices"
   ],
   offlineChannels: [
     "canales fuera de linea",
     "canales fuera de línea",
     "dispositivos fuera de linea",
     "dispositivos fuera de línea",
-    "canales offline"
+    "canales offline",
+    "offline channels",
+    "offline devices"
   ],
   activeRecordings: [
     "grabaciones activas",
     "grabacion activa",
     "grabación activa",
-    "dispositivos grabando"
+    "dispositivos grabando",
+    "active recordings",
+    "recordings active",
+    "devices recording"
   ],
   signalLoss: [
     "perdida de senal",
     "perdida de señal",
-    "pérdida de señal"
+    "pérdida de señal",
+    "signal loss"
   ]
 };
 
@@ -504,16 +526,16 @@ function parseBoschDashboard(html, vrmId) {
   });
 
   const sections = [
-    { key: "devices", label: "dispositivos" },
-    { key: "storage", label: "almacenamiento" },
-    { key: "load", label: "compensacion de carga" }
+     { key: "devices", labels: ["dispositivos", "devices"] },
+    { key: "storage", labels: ["almacenamiento", "storage"] },
+    { key: "load", labels: ["compensacion de carga", "load balancing", "load balance", "loadbalancing"] }
   ];
 
   const indexByKey = {};
   nodes.forEach((n, idx) => {
     const normalized = normalizeLabelKey(n.text);
     sections.forEach(sec => {
-      if (normalized === sec.label && indexByKey[sec.key] == null) {
+      if (sec.labels.some(label => normalized === label) && indexByKey[sec.key] == null) {
         indexByKey[sec.key] = idx;
       }
     });
