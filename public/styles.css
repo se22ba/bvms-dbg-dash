@@ -1,3 +1,18 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --bg-2: #161b22;
+  --bg-3: #1c2128;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --border: #30363d;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+}
 button {
 background: #238636;
   color: white;
@@ -77,7 +92,7 @@ button:hover { filter: brightness(1.05); }
 .panel-head h3 {
   margin: 0;
   font-size: 1rem;
-  color: #e6edf3;
+  color: var(--fg);
 }
 .panel-source {
   font-size: .7rem;
