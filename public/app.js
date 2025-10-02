@@ -337,6 +337,10 @@ const storageResizeObservers = new Map();
       const active = pickDisplayMetric(v, "activeRecordings");
       const loss = pickDisplayMetric(v, "signalLoss");
       const tr = document.createElement("tr");
+      const totalText = formatMetric(total.value);
+      const offlineText = formatMetric(offline.value);
+      const activeText = formatMetric(active.value);
+      const lossText = formatMetric(loss.value);
       tr.innerHTML = `
         <td>${nice(v.vrmId)}</td>
         <td class="num" data-value="${total.numeric ? total.value : ""}">${totalText}</td>
