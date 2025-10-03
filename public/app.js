@@ -203,17 +203,18 @@
   }
 
   // <- ESTA era la que faltaba cerrar
-  function getRawValue(cam, ...keys) {
-    const raw = cam?.raw || {};
-    for (const key of keys) {
-      if (!key) continue;
-      const candidates = [key, String(key).toLowerCase()];
-      for (const cand of candidates) {
-        if (cand in raw && raw[cand] != null) return raw[cand];
-      }
+  function getRawValue(cam, keys) {
+  const raw = cam?.raw || {};
+  const list = Array.isArray(keys) ? keys : [keys];
+  for (const key of list) {
+    if (!key) continue;
+    const candidates = [key, String(key).toLowerCase()];
+    for (const cand of candidates) {
+      if (cand in raw && raw[cand] != null) return raw[cand];
     }
-    return "";
   }
+  return "";
+}
 
   // Si el server no mandara cameraStatus, devolver algo seguro
   function getCameraStatusSummary() {

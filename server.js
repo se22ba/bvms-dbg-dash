@@ -33,6 +33,7 @@ const DEFAULT_VRMS = (() => {
 const DBG_USER = process.env.DBG_USER || "srvadmin";
 const DBG_PASS = process.env.DBG_PASS || "DFDgsfe01!";
 
+
 const httpsAgent = new HttpsAgent({ rejectUnauthorized: false });
 
 
@@ -641,6 +642,7 @@ app.post("/api/scan", async (req, res) => {
 
     const overviewTotals = aggregateDeviceTotals(dashboards);
     const cameraStatus = summarizeCameraStatuses(camerasAll);
+    ping("overviewTotals=" + JSON.stringify(overviewTotals)); 
 
     lastSnapshot = {
       ts: Date.now(),
